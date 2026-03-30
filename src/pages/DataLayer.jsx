@@ -1,98 +1,820 @@
-import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
-import FootprintChart from '@/components/dataLayer/FootprintChart';
-import { RefreshCw } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import MainNav from '@/components/navigation/MainNav';
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { RefreshCw, Wifi, WifiOff } from "lucide-react";
+import MainNav from "../components/navigation/MainNav";
 
-const SYMBOLS = ['ES', 'NQ', 'CL', 'GC', 'RTY'];
-const TIMEFRAMES = ['1 Minute', '5 Minute', '15 Minute', '30 Minute', '1 Hour'];
+// ── Config ────────────────────────────────────────────────────────────────────
+const WS_URL = "ws://localhost:8080";
+const TICK   = 0.25;
+const IMB    = 3;
 
+// Fixed layout (px)
+const VOL_W   = 52;
+const PRICE_W = 58;
+const SUM_ROWS  = 3;   // Delta, CumΔ, Vol
+const SUM_ROW_H = 20;
+const TIME_H    = 22;
+const FOOTER_H  = SUM_ROWS * SUM_ROW_H + TIME_H;
+
+// Zoom limits
+const MIN_CW = 30;
+const MAX_CW = 150;
+const MIN_CH = 10;
+const MAX_CH = 40;
+const DEFAULT_CW = 72;
+const DEFAULT_CH = 20;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function srand(seed) {
+  const x = Math.sin(seed * 9301 + 49297) * 233280;
+  return x - Math.floor(x);
+}
+
+function distVol(open, high, low, close, volume, ts) {
+  const lvls = {};
+  if (!volume) return lvls;
+  const minP = parseFloat((Math.floor(low / TICK) * TICK).toFixed(2));
+  const maxP = parseFloat((Math.ceil(high / TICK) * TICK).toFixed(2));
+  const isG = close >= open;
+  if (Math.abs(maxP - minP) < TICK * 0.5) {
+    lvls[minP] = { b: Math.round(volume * (isG ? 0.4 : 0.6)), a: Math.round(volume * (isG ? 0.6 : 0.4)) };
+    return lvls;
+  }
+  const ps = [];
+  for (let p = minP; p <= maxP + TICK * 0.01; p = parseFloat((p + TICK).toFixed(2))) ps.push(p);
+  const mid = (high + low) / 2, sig = (maxP - minP) / 2.5;
+  let wt = ps.map(p => Math.exp(-0.5 * ((p - mid) / sig) ** 2));
+  const ws = wt.reduce((a, b) => a + b, 0) || 1;
+  wt = wt.map(w => w / ws);
+  const oP = parseFloat((Math.round(open / TICK) * TICK).toFixed(2));
+  const cP = parseFloat((Math.round(close / TICK) * TICK).toFixed(2));
+  ps.forEach((p, i) => {
+    const v = Math.max(1, Math.round(volume * wt[i]));
+    const r = srand(ts + p * 137 + i * 31);
+    let ar;
+    if (isG) ar = p > cP ? 0.55 + r * 0.25 : p < oP ? 0.2 + r * 0.2 : 0.4 + r * 0.25;
+    else     ar = p > oP ? 0.2 + r * 0.2   : p < cP ? 0.55 + r * 0.25 : 0.35 + r * 0.25;
+    lvls[p] = { b: Math.round(v * (1 - ar)), a: Math.round(v * ar) };
+  });
+  return lvls;
+}
+
+function fmt(n) {
+  if (!n && n !== 0) return "";
+  const a = Math.abs(n);
+  if (a >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (a >= 1e4) return (n / 1e3).toFixed(0) + "k";
+  if (a >= 1e3) return (n / 1e3).toFixed(1) + "k";
+  return String(n);
+}
+
+function genDemo(base, n, tf) {
+  const ohlc = {}, candles = {};
+  const now = new Date();
+  const m = parseInt(tf) || 5;
+  let price = base;
+  for (let i = n - 1; i >= 0; i--) {
+    const t = new Date(now.getTime() - i * m * 60000);
+    const bk = t.toISOString().slice(0, 16);
+    const range = (1 + srand(i * 7 + 3) * 3) * TICK;
+    const dir = srand(i * 13 + 7) > 0.45 ? 1 : -1;
+    price += (srand(i * 19 + 11) - 0.5) * 2 * TICK;
+    const o = parseFloat(price.toFixed(2));
+    const c = parseFloat((o + dir * range).toFixed(2));
+    const h = parseFloat((Math.max(o, c) + srand(i * 23 + 5) * TICK * 2).toFixed(2));
+    const l = parseFloat((Math.min(o, c) - srand(i * 29 + 9) * TICK * 2).toFixed(2));
+    const v = Math.round(200 + srand(i * 37 + 17) * 1800);
+    price = c;
+    ohlc[bk] = { time: Math.floor(t.getTime() / 1000), open: o, high: h, low: l, close: c };
+    candles[bk] = distVol(o, h, l, c, v, i * 100 + 42);
+  }
+  return { ohlc, candles };
+}
+
+const BASES = { "ES=F": 5812, "NQ=F": 20150, "CL=F": 72.5, "GC=F": 2340 };
+
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function DataLayer() {
-  const [symbol, setSymbol] = useState('ES');
-  const [timeframe, setTimeframe] = useState('5 Minute');
-  const [candles, setCandles] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [status,    setStatus]    = useState("disconnected");
+  const [ticker,    setTicker]    = useState("ES=F");
+  const [timeframe, setTimeframe] = useState("5m");
+  const [dataMode,  setDataMode]  = useState("demo");
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const tickerMap = { ES: 'ES=F', NQ: 'NQ=F', CL: 'CL=F', GC: 'GC=F', RTY: 'RTY=F' };
-      const intervalMap = { '1 Minute': '1m', '5 Minute': '5m', '15 Minute': '15m', '30 Minute': '30m', '1 Hour': '60m' };
-      const rangeMap = { '1 Minute': '1d', '5 Minute': '5d', '15 Minute': '5d', '30 Minute': '1mo', '1 Hour': '1mo' };
+  const [countdown,  setCountdown]  = useState("");
 
-      const res = await base44.functions.invoke('fetchYahooHistory', {
-        symbol: tickerMap[symbol],
-        interval: intervalMap[timeframe],
-        range: rangeMap[timeframe],
-      });
+  const canvasRef    = useRef(null);
+  const containerRef = useRef(null);
+  const candlesRef   = useRef({});
+  const ohlcRef      = useRef({});
+  const rafRef       = useRef(null);
+  const cssSize      = useRef({ w: 0, h: 0 });
 
-      const chart = res.data?.chart?.result?.[0];
-      if (chart) {
-        const timestamps = chart.timestamp || [];
-        const q = chart.indicators?.quote?.[0] || {};
-        const raw = timestamps.map((ts, i) => ({
-          timestamp: ts * 1000,
-          open: q.open?.[i],
-          high: q.high?.[i],
-          low: q.low?.[i],
-          close: q.close?.[i],
-          volume: q.volume?.[i],
-        })).filter(c => c.open && c.high && c.low && c.close);
-        setCandles(raw);
-      }
-    } catch (e) {
-      console.error(e);
+  // ── View state (pan/zoom) ──
+  const view = useRef({
+    cW: DEFAULT_CW,  // cell width
+    cH: DEFAULT_CH,  // cell height
+    scrollX: 0,      // px scrolled into grid (0 = right edge shows latest)
+    scrollY: 0,      // px scrolled down (0 = top of price range)
+    dragging: false,
+    lastX: 0,
+    lastY: 0,
+    userScrolled: false, // once true, don't auto-scroll on new data
+    lastInteraction: 0,  // timestamp of last user pan/zoom
+    mouseX: -1,      // crosshair position
+    mouseY: -1,
+  });
+
+  // ── Draw ───────────────────────────────────────────────────────────────────
+  const draw = useCallback(() => {
+    rafRef.current = null;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const { w: W, h: H } = cssSize.current;
+    if (!W || !H) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const v   = view.current;
+    const cW  = v.cW;
+    const cH  = v.cH;
+    const can = candlesRef.current;
+    const olc = ohlcRef.current;
+
+    const buckets = Object.keys(can).sort();
+    const priceSet = new Set();
+    buckets.forEach(b => Object.keys(can[b] || {}).forEach(p => priceSet.add(+p)));
+    const allPrices = Array.from(priceSet).sort((a, b) => b - a);
+
+    ctx.fillStyle = "#0e0e14";
+    ctx.fillRect(0, 0, W, H);
+
+    if (buckets.length === 0 || allPrices.length === 0) {
+      ctx.fillStyle = "#3a3a50";
+      ctx.font = "13px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Waiting for data…", W / 2, H / 2);
+      return;
     }
-    setLoading(false);
-  };
 
-  useEffect(() => { fetchData(); }, [symbol, timeframe]);
+    const nCols = buckets.length;
+    const nRows = allPrices.length;
+
+    // Viewport dimensions (the scrollable area between axes)
+    const vpW = W - VOL_W - PRICE_W;
+    const vpH = H - FOOTER_H;
+
+    // Total grid size
+    const totalW = nCols * cW;
+    const totalH = nRows * cH;
+
+    // Auto-scroll: show latest candles right-aligned, track current price vertically
+    if (!v.userScrolled) {
+      v.scrollX = Math.max(0, totalW - vpW);
+      // Center on the latest candle's close price
+      const lastBucket = buckets[buckets.length - 1];
+      const lastBar = olc[lastBucket];
+      if (lastBar) {
+        const closeP = parseFloat((Math.round(lastBar.close / TICK) * TICK).toFixed(2));
+        const closeIdx = allPrices.indexOf(closeP);
+        if (closeIdx >= 0) {
+          v.scrollY = Math.max(0, closeIdx * cH - vpH / 2);
+        } else {
+          v.scrollY = Math.max(0, (totalH - vpH) / 2);
+        }
+      } else {
+        v.scrollY = Math.max(0, (totalH - vpH) / 2);
+      }
+    }
+
+    // Clamp scroll
+    v.scrollX = Math.max(0, Math.min(totalW - vpW, v.scrollX));
+    v.scrollY = Math.max(0, Math.min(Math.max(0, totalH - vpH), v.scrollY));
+
+    // Visible range
+    const firstCol = Math.max(0, Math.floor(v.scrollX / cW));
+    const lastCol  = Math.min(nCols - 1, Math.ceil((v.scrollX + vpW) / cW));
+    const firstRow = Math.max(0, Math.floor(v.scrollY / cH));
+    const lastRow  = Math.min(nRows - 1, Math.ceil((v.scrollY + vpH) / cH));
+
+    // Volume profile (across ALL candles, not just visible)
+    const vp = {};
+    buckets.forEach(b => Object.entries(can[b] || {}).forEach(([p, c]) => {
+      vp[p] = (vp[p] || 0) + c.b + c.a;
+    }));
+    const maxV = Math.max(...Object.values(vp), 1);
+    const pocP = allPrices.reduce((best, p) => (vp[p] || 0) > (vp[best] || 0) ? p : best, allPrices[0]);
+
+    // Per-candle summaries (all candles for footer)
+    let cumD = 0;
+    const sums = buckets.map(b => {
+      const cells = can[b] || {};
+      let ask = 0, bid = 0;
+      Object.values(cells).forEach(c => { ask += c.a; bid += c.b; });
+      const delta = ask - bid;
+      cumD += delta;
+      return { ask, bid, delta, cumD, vol: ask + bid };
+    });
+
+    const fs = cH <= 16 ? 9 : 10;
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  MAIN GRID — clipped to viewport
+    // ══════════════════════════════════════════════════════════════════════════
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(VOL_W, 0, vpW, vpH);
+    ctx.clip();
+
+    for (let bi = firstCol; bi <= lastCol; bi++) {
+      const bucket = buckets[bi];
+      const x0 = VOL_W + bi * cW - v.scrollX;
+      const bar = olc[bucket];
+      const green = bar ? bar.close >= bar.open : true;
+      const isLive = bi === nCols - 1;
+
+      let hiP = null, loP = null, opP = null, clP = null;
+      if (bar) {
+        hiP = parseFloat((Math.ceil(bar.high / TICK) * TICK).toFixed(2));
+        loP = parseFloat((Math.floor(bar.low / TICK) * TICK).toFixed(2));
+        opP = parseFloat((Math.round(bar.open / TICK) * TICK).toFixed(2));
+        clP = parseFloat((Math.round(bar.close / TICK) * TICK).toFixed(2));
+      }
+
+      // Column separator
+      ctx.strokeStyle = "#1a1a28";
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(x0 - 0.5, 0);
+      ctx.lineTo(x0 - 0.5, vpH);
+      ctx.stroke();
+
+      for (let pi = firstRow; pi <= lastRow; pi++) {
+        const p  = allPrices[pi];
+        const y0 = pi * cH - v.scrollY;
+        const cell = (can[bucket] || {})[p];
+        const tot  = cell ? cell.b + cell.a : 0;
+
+        const inBody = opP !== null && clP !== null && (
+          (green  && p >= opP - 0.001 && p <= clP + 0.001) ||
+          (!green && p >= clP - 0.001 && p <= opP + 0.001)
+        );
+        const inRange = hiP !== null && p <= hiP + 0.001 && p >= loP - 0.001;
+        const isPOC   = Math.abs(p - pocP) < 0.001;
+
+        // Cell background
+        if (tot > 0) {
+          const askDom = cell.a >= cell.b;
+          const intensity = Math.min(Math.max(cell.b, cell.a) / 200, 1);
+          if (askDom) {
+            ctx.fillStyle = `rgb(${Math.round(20 + intensity * 15)},${Math.round(40 + intensity * 60)},${Math.round(20 + intensity * 15)})`;
+          } else {
+            ctx.fillStyle = `rgb(${Math.round(50 + intensity * 60)},${Math.round(18 + intensity * 10)},${Math.round(18 + intensity * 10)})`;
+          }
+          ctx.fillRect(x0, y0, cW - 1, cH - 1);
+        } else if (inBody) {
+          ctx.fillStyle = green ? "rgba(22,80,34,0.15)" : "rgba(80,22,22,0.15)";
+          ctx.fillRect(x0, y0, cW - 1, cH - 1);
+        }
+
+        if (isPOC && tot > 0) {
+          ctx.fillStyle = "rgba(255,200,0,0.08)";
+          ctx.fillRect(x0, y0, cW - 1, cH - 1);
+        }
+
+        // Grid line
+        ctx.strokeStyle = "#1a1a26";
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0 + cH - 0.5);
+        ctx.lineTo(x0 + cW - 1, y0 + cH - 0.5);
+        ctx.stroke();
+
+        if (!cell || tot === 0) continue;
+
+        const askDom = cell.a >= cell.b;
+        const ratio = askDom ? (cell.b > 0 ? cell.a / cell.b : 999) : (cell.a > 0 ? cell.b / cell.a : 999);
+        const imb = tot > 5 && ratio >= IMB;
+
+        // Imbalance border
+        if (imb) {
+          ctx.strokeStyle = askDom ? "rgba(0,180,60,0.9)" : "rgba(220,40,40,0.9)";
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(x0 + 0.5, y0 + 0.5, cW - 2, cH - 2);
+        }
+
+        // Bid [candle] Ask
+        const midY = y0 + cH / 2;
+        const midX = x0 + cW / 2;
+        ctx.textBaseline = "middle";
+
+        // Bid
+        ctx.font = `${!askDom ? "bold" : "normal"} ${fs}px monospace`;
+        ctx.fillStyle = !askDom ? "#ff8888" : "#889988";
+        ctx.textAlign = "right";
+        ctx.fillText(String(cell.b), midX - 5, midY);
+
+        // Mini candlestick
+        if (inRange) {
+          const candleW = 3;
+          const cx = midX - candleW / 2;
+          if (inBody) {
+            ctx.fillStyle = green ? "#22dd66" : "#ee4444";
+            ctx.fillRect(cx, y0 + 2, candleW, cH - 4);
+          } else {
+            ctx.strokeStyle = green ? "#22dd66" : "#ee4444";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(midX, y0 + 2);
+            ctx.lineTo(midX, y0 + cH - 2);
+            ctx.stroke();
+          }
+        } else {
+          ctx.fillStyle = "#222233";
+          ctx.fillRect(midX - 0.5, midY - 0.5, 1, 1);
+        }
+
+        // Ask
+        ctx.font = `${askDom ? "bold" : "normal"} ${fs}px monospace`;
+        ctx.fillStyle = askDom ? "#66ee88" : "#889988";
+        ctx.textAlign = "left";
+        ctx.fillText(String(cell.a), midX + 5, midY);
+      }
+
+      // Live glow
+      if (isLive) {
+        ctx.strokeStyle = "rgba(60,140,255,0.4)";
+        ctx.lineWidth = 1.5;
+        const y1 = firstRow * cH - v.scrollY;
+        const y2 = (lastRow + 1) * cH - v.scrollY;
+        ctx.strokeRect(x0 + 0.5, y1, cW - 2, y2 - y1);
+      }
+    }
+
+    // ── Crosshair ──
+    if (v.mouseX >= VOL_W && v.mouseX < VOL_W + vpW && v.mouseY >= 0 && v.mouseY < vpH) {
+      ctx.strokeStyle = "rgba(255,255,255,0.12)";
+      ctx.lineWidth = 0.5;
+      ctx.setLineDash([4, 4]);
+      // Horizontal
+      ctx.beginPath();
+      ctx.moveTo(VOL_W, v.mouseY);
+      ctx.lineTo(VOL_W + vpW, v.mouseY);
+      ctx.stroke();
+      // Vertical
+      ctx.beginPath();
+      ctx.moveTo(v.mouseX, 0);
+      ctx.lineTo(v.mouseX, vpH);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    ctx.restore(); // end clip
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  VOLUME PROFILE (left, scrolls vertically)
+    // ══════════════════════════════════════════════════════════════════════════
+    ctx.fillStyle = "#0a0a10";
+    ctx.fillRect(0, 0, VOL_W, vpH);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, VOL_W, vpH);
+    ctx.clip();
+
+    for (let pi = firstRow; pi <= lastRow; pi++) {
+      const p  = allPrices[pi];
+      const vol = vp[p] || 0;
+      const bw = Math.round((vol / maxV) * (VOL_W - 4));
+      const isPOC = Math.abs(p - pocP) < 0.001;
+      const y0 = pi * cH - v.scrollY;
+
+      ctx.globalAlpha = 0.55;
+      ctx.fillStyle = isPOC ? "#b060ff" : "#1a5090";
+      ctx.fillRect(VOL_W - bw - 2, y0 + 1, bw, Math.max(1, cH - 2));
+      ctx.globalAlpha = 1;
+
+      if (vol > 0) {
+        ctx.font = `${isPOC ? "bold" : "normal"} 8px monospace`;
+        ctx.fillStyle = isPOC ? "#d4a0ff" : "#6688aa";
+        ctx.textAlign = "right";
+        ctx.textBaseline = "middle";
+        ctx.fillText(fmt(vol), VOL_W - 4, y0 + cH / 2);
+      }
+
+      ctx.strokeStyle = "#141420";
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(0, y0 + cH - 0.5);
+      ctx.lineTo(VOL_W, y0 + cH - 0.5);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Vol/grid border
+    ctx.strokeStyle = "#252538";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(VOL_W - 0.5, 0);
+    ctx.lineTo(VOL_W - 0.5, vpH);
+    ctx.stroke();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  PRICE AXIS (right, scrolls vertically)
+    // ══════════════════════════════════════════════════════════════════════════
+    const priceX = W - PRICE_W;
+    ctx.fillStyle = "#0a0a10";
+    ctx.fillRect(priceX, 0, PRICE_W, vpH);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(priceX, 0, PRICE_W, vpH);
+    ctx.clip();
+
+    for (let pi = firstRow; pi <= lastRow; pi++) {
+      const p = allPrices[pi];
+      const isPOC = Math.abs(p - pocP) < 0.001;
+      const y0 = pi * cH - v.scrollY;
+      ctx.font = `${isPOC ? "bold" : "normal"} 9px monospace`;
+      ctx.fillStyle = isPOC ? "#f5a623" : "#404058";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(p.toFixed(2), priceX + 4, y0 + cH / 2);
+    }
+
+    // Crosshair price label
+    if (v.mouseY >= 0 && v.mouseY < vpH) {
+      const priceIdx = Math.floor((v.mouseY + v.scrollY) / cH);
+      if (priceIdx >= 0 && priceIdx < nRows) {
+        const labelY = priceIdx * cH - v.scrollY + cH / 2;
+        ctx.fillStyle = "#2a3a5a";
+        ctx.fillRect(priceX, labelY - 8, PRICE_W, 16);
+        ctx.font = "bold 9px monospace";
+        ctx.fillStyle = "#fff";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText(allPrices[priceIdx].toFixed(2), priceX + 4, labelY);
+      }
+    }
+
+    ctx.restore();
+
+    ctx.strokeStyle = "#252538";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(priceX + 0.5, 0);
+    ctx.lineTo(priceX + 0.5, vpH);
+    ctx.stroke();
+
+    // ══════════════════════════════════════════════════════════════════════════
+    //  SUMMARY FOOTER (bottom, scrolls horizontally)
+    // ══════════════════════════════════════════════════════════════════════════
+    const sumY = vpH;
+
+    // Background
+    ctx.fillStyle = "#0a0a12";
+    ctx.fillRect(0, sumY, W, FOOTER_H);
+
+    // Separator
+    ctx.strokeStyle = "#333348";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, sumY + 1);
+    ctx.lineTo(W, sumY + 1);
+    ctx.stroke();
+
+    // Labels
+    const labels = [["Delta", "#5588ff"], ["Cum.Δ", "#cc66cc"], ["Vol", "#888888"]];
+    labels.forEach(([lbl, col], si) => {
+      const ry = sumY + si * SUM_ROW_H;
+      ctx.fillStyle = "#0a0a12";
+      ctx.fillRect(0, ry + 2, VOL_W, SUM_ROW_H - 2);
+      ctx.font = "bold 8px sans-serif";
+      ctx.fillStyle = col;
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      ctx.fillText(lbl, VOL_W - 4, ry + SUM_ROW_H / 2);
+    });
+
+    // Per-candle values (clipped to viewport width)
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(VOL_W, sumY, vpW, FOOTER_H);
+    ctx.clip();
+
+    for (let bi = firstCol; bi <= lastCol; bi++) {
+      const s = sums[bi];
+      const x0 = VOL_W + bi * cW - v.scrollX;
+
+      const rows = [
+        { v: s.delta, col: s.delta >= 0 ? "#5588ff" : "#ff6688", bg: s.delta >= 0 ? "rgba(55,88,255,0.1)" : "rgba(255,66,136,0.1)" },
+        { v: s.cumD,  col: s.cumD  >= 0 ? "#cc88ff" : "#ff88cc", bg: s.cumD  >= 0 ? "rgba(140,60,200,0.08)" : "rgba(255,60,140,0.08)" },
+        { v: s.vol,   col: "#aaaaaa", bg: "transparent" },
+      ];
+
+      rows.forEach(({ v: val, col, bg }, si) => {
+        const ry = sumY + si * SUM_ROW_H;
+        if (bg !== "transparent") {
+          ctx.fillStyle = bg;
+          ctx.fillRect(x0, ry + 2, cW - 1, SUM_ROW_H - 2);
+        }
+        ctx.font = "bold 9px sans-serif";
+        ctx.fillStyle = col;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const pfx = si === 0 && val > 0 ? "+" : "";
+        ctx.fillText(pfx + fmt(val), x0 + cW / 2, ry + SUM_ROW_H / 2);
+
+        ctx.strokeStyle = "#1a1a28";
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x0, ry + SUM_ROW_H - 0.5);
+        ctx.lineTo(x0 + cW, ry + SUM_ROW_H - 0.5);
+        ctx.stroke();
+      });
+    }
+
+    // Time axis
+    const timeY = sumY + SUM_ROWS * SUM_ROW_H;
+    ctx.fillStyle = "#0a0a12";
+    ctx.fillRect(VOL_W, timeY, vpW, TIME_H);
+    ctx.strokeStyle = "#1e1e2c";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(VOL_W, timeY + 0.5);
+    ctx.lineTo(VOL_W + vpW, timeY + 0.5);
+    ctx.stroke();
+
+    for (let bi = firstCol; bi <= lastCol; bi++) {
+      const x0 = VOL_W + bi * cW - v.scrollX;
+      const isLive = bi === nCols - 1;
+      ctx.font = `${isLive ? "bold" : "normal"} 9px sans-serif`;
+      ctx.fillStyle = isLive ? "#4488ff" : "#303048";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(buckets[bi].slice(11, 16), x0 + cW / 2, timeY + TIME_H / 2);
+    }
+
+    // Crosshair time label
+    if (v.mouseX >= VOL_W && v.mouseX < VOL_W + vpW) {
+      const colIdx = Math.floor((v.mouseX - VOL_W + v.scrollX) / cW);
+      if (colIdx >= 0 && colIdx < nCols) {
+        const labelX = VOL_W + colIdx * cW - v.scrollX + cW / 2;
+        const tw = 36;
+        ctx.fillStyle = "#2a3a5a";
+        ctx.fillRect(labelX - tw / 2, timeY + 2, tw, TIME_H - 4);
+        ctx.font = "bold 9px sans-serif";
+        ctx.fillStyle = "#fff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(buckets[colIdx].slice(11, 16), labelX, timeY + TIME_H / 2);
+      }
+    }
+
+    ctx.restore();
+  }, []);
+
+  const scheduleDraw = useCallback(() => {
+    if (!rafRef.current) rafRef.current = requestAnimationFrame(draw);
+  }, [draw]);
+
+  // ── Mouse interaction (TradingView-style) ──────────────────────────────────
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const v = view.current;
+
+    function onMouseDown(e) {
+      v.dragging = true;
+      v.lastX = e.clientX;
+      v.lastY = e.clientY;
+      canvas.style.cursor = "grabbing";
+    }
+
+    function onMouseMove(e) {
+      const rect = canvas.getBoundingClientRect();
+      v.mouseX = e.clientX - rect.left;
+      v.mouseY = e.clientY - rect.top;
+
+      if (v.dragging) {
+        const dx = e.clientX - v.lastX;
+        const dy = e.clientY - v.lastY;
+        v.scrollX -= dx;
+        v.scrollY -= dy;
+        v.lastX = e.clientX;
+        v.lastY = e.clientY;
+        v.userScrolled = true;
+        v.lastInteraction = Date.now();
+      }
+      scheduleDraw();
+    }
+
+    function onMouseUp() {
+      v.dragging = false;
+      canvas.style.cursor = "crosshair";
+    }
+
+    function onMouseLeave() {
+      v.dragging = false;
+      v.mouseX = -1;
+      v.mouseY = -1;
+      canvas.style.cursor = "crosshair";
+      scheduleDraw();
+    }
+
+    function onWheel(e) {
+      e.preventDefault();
+      const zf = e.deltaY > 0 ? 0.94 : 1.06;
+
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left - VOL_W;
+      const my = e.clientY - rect.top;
+
+      // Shift-scroll: zoom Y only. Ctrl-scroll: zoom X only. Otherwise both.
+      if (!e.ctrlKey) {
+        const oldCH = v.cH;
+        v.cH = Math.max(MIN_CH, Math.min(MAX_CH, v.cH * zf));
+        v.scrollY = (v.scrollY + my) * (v.cH / oldCH) - my;
+      }
+      if (!e.shiftKey) {
+        const oldCW = v.cW;
+        v.cW = Math.max(MIN_CW, Math.min(MAX_CW, v.cW * zf));
+        v.scrollX = (v.scrollX + mx) * (v.cW / oldCW) - mx;
+      }
+
+      v.userScrolled = true;
+      v.lastInteraction = Date.now();
+      scheduleDraw();
+    }
+
+    function onDblClick() {
+      // Reset to auto-fit
+      v.cW = DEFAULT_CW;
+      v.cH = DEFAULT_CH;
+      v.userScrolled = false;
+      v.lastInteraction = 0;
+      scheduleDraw();
+    }
+
+    canvas.style.cursor = "crosshair";
+    canvas.addEventListener("mousedown", onMouseDown);
+    canvas.addEventListener("mousemove", onMouseMove);
+    canvas.addEventListener("mouseup", onMouseUp);
+    canvas.addEventListener("mouseleave", onMouseLeave);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    canvas.addEventListener("dblclick", onDblClick);
+
+    return () => {
+      canvas.removeEventListener("mousedown", onMouseDown);
+      canvas.removeEventListener("mousemove", onMouseMove);
+      canvas.removeEventListener("mouseup", onMouseUp);
+      canvas.removeEventListener("mouseleave", onMouseLeave);
+      canvas.removeEventListener("wheel", onWheel);
+      canvas.removeEventListener("dblclick", onDblClick);
+    };
+  }, [scheduleDraw]);
+
+  // ── Resize ──
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      const dpr = window.devicePixelRatio || 1;
+      const c = canvasRef.current;
+      if (!c) return;
+      c.width = Math.floor(width * dpr);
+      c.height = Math.floor(height * dpr);
+      cssSize.current = { w: width, h: height };
+      scheduleDraw();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [scheduleDraw]);
+
+  // ── Load data ──
+  const loadData = useCallback((sym, tf) => {
+    const { ohlc, candles } = genDemo(BASES[sym] || 5800, 15, tf);
+    candlesRef.current = candles;
+    ohlcRef.current = ohlc;
+    view.current.userScrolled = false;
+    setDataMode("demo");
+    scheduleDraw();
+  }, [scheduleDraw]);
+
+  useEffect(() => { loadData(ticker, timeframe); }, [ticker, timeframe, loadData]);
+
+  // ── WebSocket ──
+  useEffect(() => {
+    let ws, timer;
+    function connect() {
+      ws = new WebSocket(WS_URL);
+      ws.onopen = () => { setStatus("connected"); setDataMode("live"); };
+      ws.onerror = () => setStatus("error");
+      ws.onclose = () => { setStatus("disconnected"); timer = setTimeout(connect, 10000); };
+      ws.onmessage = e => {
+        try {
+          const d = JSON.parse(e.data);
+          if (d.type !== "trade") return;
+          const ts = new Date(d.timestamp);
+          const bk = ts.toISOString().slice(0, 16);
+          const pl = parseFloat((Math.round(d.price / TICK) * TICK).toFixed(2));
+          const c = candlesRef.current;
+          if (!c[bk]) c[bk] = {};
+          if (!c[bk][pl]) c[bk][pl] = { b: 0, a: 0 };
+          c[bk][pl].b += d.bid_volume || 0;
+          c[bk][pl].a += d.ask_volume || 0;
+          // Re-engage auto-follow after 5s of no user interaction
+          const vw = view.current;
+          if (vw.userScrolled && vw.lastInteraction && Date.now() - vw.lastInteraction > 5000) {
+            vw.userScrolled = false;
+          }
+          const o = ohlcRef.current;
+          const t = Math.floor(ts.getTime() / 60000) * 60;
+          if (!o[bk]) o[bk] = { time: t, open: d.price, high: d.price, low: d.price, close: d.price };
+          else { o[bk].high = Math.max(o[bk].high, d.price); o[bk].low = Math.min(o[bk].low, d.price); o[bk].close = d.price; }
+          scheduleDraw();
+        } catch {}
+      };
+    }
+    connect();
+    return () => { clearTimeout(timer); if (ws) ws.close(); };
+  }, [scheduleDraw]);
+
+  // ── Candle countdown timer ──
+  useEffect(() => {
+    const mins = parseInt(timeframe) || 5;
+    const interval = setInterval(() => {
+      const now = new Date();
+      const msIntoCandle = (now.getMinutes() % mins) * 60000 + now.getSeconds() * 1000 + now.getMilliseconds();
+      const msRemaining = mins * 60000 - msIntoCandle;
+      const totalSec = Math.ceil(msRemaining / 1000);
+      const m = Math.floor(totalSec / 60);
+      const s = totalSec % 60;
+      setCountdown(`${m}:${s.toString().padStart(2, "0")}`);
+    }, 250);
+    return () => clearInterval(interval);
+  }, [timeframe]);
+
+  const label = ticker.replace("=F", "");
 
   return (
-    <div className="bg-black min-h-screen flex">
+    <div style={{ height: "100vh", background: "#0e0e14", display: "flex", flexDirection: "column", fontFamily: "monospace", paddingLeft: "4rem" }}>
       <MainNav />
-      <div className="ml-16 flex-1 flex flex-col">
-        {/* Toolbar */}
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-800 bg-gray-950">
-          <Select value={symbol} onValueChange={setSymbol}>
-            <SelectTrigger className="w-28 h-8 bg-gray-900 border-gray-700 text-white text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-gray-900 border-gray-700">
-              {SYMBOLS.map(s => <SelectItem key={s} value={s} className="text-white text-xs">{s}</SelectItem>)}
-            </SelectContent>
-          </Select>
-
-          <Select value={timeframe} onValueChange={setTimeframe}>
-            <SelectTrigger className="w-32 h-8 bg-gray-900 border-gray-700 text-white text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-gray-900 border-gray-700">
-              {TIMEFRAMES.map(t => <SelectItem key={t} value={t} className="text-white text-xs">{t}</SelectItem>)}
-            </SelectContent>
-          </Select>
-
-          <Button size="sm" variant="ghost" onClick={fetchData} disabled={loading} className="h-8 text-gray-400 hover:text-white">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </Button>
-
-          <span className="text-gray-600 text-xs ml-2">Drag to pan • Scroll to zoom columns</span>
+      <div style={{
+        borderBottom: "1px solid #1e1e2c", background: "#0c0c14", padding: "7px 16px",
+        display: "flex", alignItems: "center", gap: 10, flexShrink: 0,
+      }}>
+        <span style={{ fontWeight: 700, fontSize: 13, fontFamily: "sans-serif", color: "#c0c0d8" }}>
+          {label} · Footprint
+        </span>
+        <div style={{ display: "flex", gap: 3, marginLeft: 4 }}>
+          {["1m", "5m", "15m", "30m"].map(tf => (
+            <button key={tf} onClick={() => setTimeframe(tf)} style={{
+              background: timeframe === tf ? "#1a3660" : "transparent",
+              border: "1px solid " + (timeframe === tf ? "#274e9e" : "#1e1e2c"),
+              color: timeframe === tf ? "#60a5fa" : "#3a3a54",
+              borderRadius: 3, padding: "2px 9px", fontSize: 10, cursor: "pointer", fontFamily: "sans-serif",
+            }}>{tf}</button>
+          ))}
         </div>
-
-        {/* Chart */}
-        <div className="flex-1 overflow-hidden">
-          {loading ? (
-            <div className="flex items-center justify-center h-full text-gray-500">
-              <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading...
-            </div>
-          ) : candles.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-gray-500 text-sm">No data</div>
-          ) : (
-            <FootprintChart candles={candles} />
+        <span style={{
+          color: "#60a5fa", fontSize: 11, fontFamily: "monospace", fontWeight: 700,
+          background: "#0d1a2e", border: "1px solid #1a3060", borderRadius: 3,
+          padding: "2px 8px", minWidth: 42, textAlign: "center", letterSpacing: 1,
+        }}>{countdown}</span>
+        <select value={ticker} onChange={e => setTicker(e.target.value)} style={{
+          background: "#0a0a12", border: "1px solid #1e1e2c", color: "#606078",
+          borderRadius: 3, padding: "2px 6px", fontSize: 10, fontFamily: "sans-serif", cursor: "pointer",
+        }}>
+          <option value="ES=F">ES</option>
+          <option value="NQ=F">NQ</option>
+          <option value="CL=F">CL</option>
+          <option value="GC=F">GC</option>
+        </select>
+        <button onClick={() => loadData(ticker, timeframe)}
+          style={{ background: "none", border: "none", color: "#3a3a54", cursor: "pointer", padding: "2px 4px", display: "flex", alignItems: "center" }}>
+          <RefreshCw size={12} />
+        </button>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, fontFamily: "sans-serif" }}>
+          {dataMode === "demo" && (
+            <span style={{ color: "#f59e0b", fontSize: 9, padding: "1px 6px", border: "1px solid #553300", borderRadius: 3 }}>
+              DEMO
+            </span>
           )}
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            {status === "connected"
+              ? <Wifi size={11} style={{ color: "#22c55e" }} />
+              : <WifiOff size={11} style={{ color: "#333" }} />}
+            <span style={{ color: status === "connected" ? "#22c55e" : "#333", fontSize: 10 }}>
+              {status === "connected" ? "MBO Live" : "offline"}
+            </span>
+          </div>
         </div>
+      </div>
+      <div ref={containerRef} style={{ flex: 1, position: "relative", overflow: "hidden" }}>
+        <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
       </div>
     </div>
   );
