@@ -118,7 +118,8 @@ export default function Landing() {
             <img
               src={HERO_IMG}
               alt="Datrena Footprint Chart Terminal"
-              className="relative rounded-xl shadow-2xl shadow-black/50 w-full border border-gray-800/50"
+              className="relative w-full"
+              style={{ mixBlendMode: 'lighten' }}
             />
           </div>
         </div>
