@@ -165,6 +165,7 @@ export default function DataLayer() {
   const [hoverBar,  setHoverBar]  = useState(null);
   const [showOverlayMenu, setShowOverlayMenu] = useState(false);
   const [latency, setLatency] = useState(null);
+  const [estTime, setEstTime] = useState("");
   const lastMsgTimeRef = useRef(0);
   const [overlays, setOverlays] = useState({
     footprint: true, depthHeatmap: false, restingOrders: false,
@@ -662,16 +663,20 @@ export default function DataLayer() {
       });
     }
 
-    for (let pi = firstRow; pi <= lastRow; pi++) {
-      const p = allPrices[pi];
-      const isPOC = Math.abs(p - pocP) < 0.001;
-      const y0 = pi * cH - v.scrollY;
-      if (cH >= 6) {
-        ctx.font = `${isPOC ? "bold" : "normal"} 9px monospace`;
-        ctx.fillStyle = isPOC ? "#f5a623" : "#353548";
-        ctx.textAlign = "left";
-        ctx.textBaseline = "middle";
-        ctx.fillText(p.toFixed(2), priceX + 4, y0 + cH / 2);
+    {
+      // Show every Nth price label so they don't overlap — min ~14px apart
+      const labelStep = cH >= 14 ? 1 : Math.max(1, Math.ceil(14 / cH));
+      for (let pi = firstRow; pi <= lastRow; pi++) {
+        const p = allPrices[pi];
+        const isPOC = Math.abs(p - pocP) < 0.001;
+        const y0 = pi * cH - v.scrollY;
+        if (isPOC || pi % labelStep === 0) {
+          ctx.font = `${isPOC ? "bold" : "normal"} 9px monospace`;
+          ctx.fillStyle = isPOC ? "#f5a623" : "#353548";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.fillText(p.toFixed(2), priceX + 4, y0 + cH / 2);
+        }
       }
     }
 
@@ -1159,10 +1164,10 @@ export default function DataLayer() {
     }
   }, [timeframe]); // eslint-disable-line
 
-  // ── Countdown ──
+  // ── Countdown + EST clock ──
   useEffect(() => {
     const mins = tfMinutes(timeframe);
-    const interval = setInterval(() => {
+    const tick = () => {
       const now = new Date();
       const totalMsInDay = now.getHours() * 3600000 + now.getMinutes() * 60000 + now.getSeconds() * 1000 + now.getMilliseconds();
       const candleMs = mins * 60000;
@@ -1178,7 +1183,10 @@ export default function DataLayer() {
         const s = totalSec % 60;
         setCountdown(`${m}:${s.toString().padStart(2, "0")}`);
       }
-    }, 250);
+      setEstTime(now.toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }));
+    };
+    tick();
+    const interval = setInterval(tick, 250);
     return () => clearInterval(interval);
   }, [timeframe]);
 
@@ -1305,6 +1313,16 @@ export default function DataLayer() {
 
         {/* Right side: status */}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontFamily: "sans-serif" }}>
+          {estTime && (
+            <span style={{
+              fontSize: 9, fontFamily: "monospace", fontWeight: 600,
+              color: "#8888aa",
+              background: "#0c0c14", border: "1px solid #1a1a2c", borderRadius: 3,
+              padding: "1px 6px",
+            }}>
+              {estTime} EST
+            </span>
+          )}
           {latency !== null && status === "connected" && (
             <span style={{
               fontSize: 9, fontFamily: "monospace", fontWeight: 600,
