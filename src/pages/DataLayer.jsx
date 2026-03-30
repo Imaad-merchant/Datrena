@@ -748,7 +748,13 @@ export default function DataLayer() {
     let ws, timer;
     function connect() {
       ws = new WebSocket(WS_URL);
-      ws.onopen = () => { setStatus("connected"); setDataMode("live"); };
+      ws.onopen = () => {
+        setStatus("connected");
+        setDataMode("live");
+        // Clear demo data so live data doesn't overlap with different price range
+        candlesRef.current = {};
+        ohlcRef.current = {};
+      };
       ws.onerror = () => setStatus("error");
       ws.onclose = () => { setStatus("disconnected"); timer = setTimeout(connect, 10000); };
       ws.onmessage = e => {
@@ -756,7 +762,10 @@ export default function DataLayer() {
           const d = JSON.parse(e.data);
           if (d.type !== "trade") return;
           const ts = new Date(d.timestamp);
-          const bk = ts.toISOString().slice(0, 16);
+          // Floor timestamp to current timeframe interval
+          const tfMs = tfMinutes(timeframe) * 60000;
+          const floored = new Date(Math.floor(ts.getTime() / tfMs) * tfMs);
+          const bk = floored.toISOString().slice(0, 16);
           const pl = parseFloat((Math.round(d.price / TICK) * TICK).toFixed(2));
           const c = candlesRef.current;
           if (!c[bk]) c[bk] = {};
@@ -769,7 +778,7 @@ export default function DataLayer() {
             vw.userScrolled = false;
           }
           const o = ohlcRef.current;
-          const t = Math.floor(ts.getTime() / 60000) * 60;
+          const t = Math.floor(floored.getTime() / 1000);
           if (!o[bk]) o[bk] = { time: t, open: d.price, high: d.price, low: d.price, close: d.price };
           else { o[bk].high = Math.max(o[bk].high, d.price); o[bk].low = Math.min(o[bk].low, d.price); o[bk].close = d.price; }
           scheduleDraw();
@@ -778,7 +787,7 @@ export default function DataLayer() {
     }
     connect();
     return () => { clearTimeout(timer); if (ws) ws.close(); };
-  }, [scheduleDraw]);
+  }, [scheduleDraw, timeframe]);
 
   // ── Candle countdown timer ──
   useEffect(() => {
