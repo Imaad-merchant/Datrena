@@ -11,6 +11,7 @@ import Landing from './pages/Landing';
 import Pricing from './pages/Pricing';
 import Features from './pages/Features';
 import ForgeLabs from './pages/ForgeLabs';
+import GithubPRs from './pages/GithubPRs';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -40,6 +41,7 @@ const AuthenticatedApp = () => {
       <Route path="/Pricing" element={<Pricing />} />
       <Route path="/Features" element={<Features />} />
       <Route path="/ForgeLabs" element={<ForgeLabs />} />
+      <Route path="/GithubPRs" element={<GithubPRs />} />
       
       {/* Authenticated routes */}
       {user ? (
