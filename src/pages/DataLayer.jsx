@@ -100,6 +100,13 @@ function genDemo(base, n, tf) {
 
 const BASES = { "ES=F": 5812, "NQ=F": 20150, "CL=F": 72.5, "GC=F": 2340 };
 
+const TICKER_INFO = {
+  "ES=F": { name: "S&P 500 E-mini Futures", exchange: "CME", tick: "0.25" },
+  "NQ=F": { name: "Nasdaq 100 E-mini Futures", exchange: "CME", tick: "0.25" },
+  "CL=F": { name: "Crude Oil Futures", exchange: "NYMEX", tick: "0.01" },
+  "GC=F": { name: "Gold Futures", exchange: "COMEX", tick: "0.10" },
+};
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function DataLayer() {
   const [status,    setStatus]    = useState("disconnected");
@@ -109,7 +116,9 @@ export default function DataLayer() {
 
   const [countdown,  setCountdown]  = useState("");
   const [showSnap,   setShowSnap]   = useState(false);
+  const [hoverBar,   setHoverBar]   = useState(null); // { o, h, l, c, vol, delta }
   const snapTimerRef = useRef(null);
+  const hoverBarRef  = useRef(null);
 
   const canvasRef    = useRef(null);
   const containerRef = useRef(null);
@@ -571,6 +580,25 @@ export default function DataLayer() {
       }
     }
 
+    // Compute hovered bar OHLCV for the info bar
+    if (v.mouseX >= VOL_W && v.mouseX < VOL_W + vpW) {
+      const colIdx = Math.floor((v.mouseX - VOL_W + v.scrollX) / cW);
+      if (colIdx >= 0 && colIdx < nCols) {
+        const bar = olc[buckets[colIdx]];
+        const s = sums[colIdx];
+        if (bar) {
+          hoverBarRef.current = { o: bar.open, h: bar.high, l: bar.low, c: bar.close, vol: s.vol, delta: s.delta };
+        }
+      }
+    } else {
+      // Show latest bar when not hovering
+      const lastBar = olc[buckets[nCols - 1]];
+      const lastSum = sums[nCols - 1];
+      if (lastBar) {
+        hoverBarRef.current = { o: lastBar.open, h: lastBar.high, l: lastBar.low, c: lastBar.close, vol: lastSum.vol, delta: lastSum.delta };
+      }
+    }
+
     ctx.restore();
   }, []);
 
@@ -609,6 +637,11 @@ export default function DataLayer() {
       const rect = canvas.getBoundingClientRect();
       v.mouseX = e.clientX - rect.left;
       v.mouseY = e.clientY - rect.top;
+
+      // Sync hoverBar ref to state for the info bar
+      if (hoverBarRef.current) {
+        setHoverBar({ ...hoverBarRef.current });
+      }
 
       if (v.dragging) {
         const dx = e.clientX - v.lastX;
@@ -659,6 +692,10 @@ export default function DataLayer() {
       v.mouseY = -1;
       canvas.style.cursor = "crosshair";
       scheduleDraw();
+      // Show latest bar info when not hovering
+      if (hoverBarRef.current) {
+        setHoverBar({ ...hoverBarRef.current });
+      }
     }
 
     function onWheel(e) {
@@ -813,14 +850,18 @@ export default function DataLayer() {
     return () => clearInterval(interval);
   }, [timeframe]);
 
-  // ── Show/hide snap-to-latest button ──
+  // ── Show/hide snap-to-latest button + sync hover bar ──
   useEffect(() => {
     const iv = setInterval(() => {
       const v = view.current;
       setShowSnap(v.userScrolled);
+      // Keep hover bar in sync (shows latest bar when not hovering)
+      if (hoverBarRef.current && !hoverBar) {
+        setHoverBar({ ...hoverBarRef.current });
+      }
     }, 300);
     return () => clearInterval(iv);
-  }, []);
+  }, [hoverBar]);
 
   const snapToLatest = useCallback(() => {
     const v = view.current;
@@ -831,17 +872,41 @@ export default function DataLayer() {
   }, [scheduleDraw]);
 
   const label = ticker.replace("=F", "");
+  const info = TICKER_INFO[ticker] || {};
+  const barUp = hoverBar ? hoverBar.c >= hoverBar.o : false;
+  const barColor = barUp ? "#22dc6e" : "#ef4444";
 
   return (
     <div style={{ height: "100vh", background: "#0e0e14", display: "flex", flexDirection: "column", fontFamily: "monospace", paddingLeft: "4rem" }}>
       <MainNav />
       <div style={{
         borderBottom: "1px solid #1e1e2c", background: "#0c0c14", padding: "7px 16px",
-        display: "flex", alignItems: "center", gap: 10, flexShrink: 0,
+        display: "flex", alignItems: "center", gap: 10, flexShrink: 0, flexWrap: "nowrap", overflow: "hidden",
       }}>
         <span style={{ fontWeight: 700, fontSize: 13, fontFamily: "sans-serif", color: "#c0c0d8" }}>
-          {label} · Footprint
+          {label}
         </span>
+        <span style={{ color: "#505068", fontSize: 10, fontFamily: "sans-serif", whiteSpace: "nowrap" }}>
+          {info.name} · {info.exchange}
+        </span>
+        {hoverBar && (
+          <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, fontFamily: "sans-serif", whiteSpace: "nowrap" }}>
+            <span style={{ color: "#606078" }}>O</span>
+            <span style={{ color: barColor, fontWeight: 600 }}>{hoverBar.o.toFixed(2)}</span>
+            <span style={{ color: "#606078", marginLeft: 4 }}>H</span>
+            <span style={{ color: barColor, fontWeight: 600 }}>{hoverBar.h.toFixed(2)}</span>
+            <span style={{ color: "#606078", marginLeft: 4 }}>L</span>
+            <span style={{ color: barColor, fontWeight: 600 }}>{hoverBar.l.toFixed(2)}</span>
+            <span style={{ color: "#606078", marginLeft: 4 }}>C</span>
+            <span style={{ color: barColor, fontWeight: 600 }}>{hoverBar.c.toFixed(2)}</span>
+            <span style={{ color: "#606078", marginLeft: 4 }}>V</span>
+            <span style={{ color: "#aaa", fontWeight: 600 }}>{fmt(hoverBar.vol)}</span>
+            <span style={{ color: "#606078", marginLeft: 4 }}>Δ</span>
+            <span style={{ color: hoverBar.delta >= 0 ? "#5588ff" : "#ff6688", fontWeight: 600 }}>
+              {hoverBar.delta >= 0 ? "+" : ""}{fmt(hoverBar.delta)}
+            </span>
+          </div>
+        )}
         <div style={{ display: "flex", gap: 3, marginLeft: 4 }}>
           {["1m", "2m", "3m", "5m", "10m", "15m", "30m", "1h", "4h", "D", "W", "M"].map(tf => (
             <button key={tf} onClick={() => setTimeframe(tf)} style={{
