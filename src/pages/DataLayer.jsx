@@ -288,8 +288,8 @@ export default function DataLayer() {
       return { ask, bid, delta, cumD, vol: ask + bid };
     });
 
-    const showText = cW >= 20 && cH >= 10;
-    const fs = Math.min(14, Math.max(8, Math.floor(cH * 0.45)));
+    const showText = true;
+    const fs = Math.min(14, Math.max(6, Math.floor(cH * 0.45)));
 
     // ════════════════════════════════════════════════════════════════════════
     //  MAIN GRID
