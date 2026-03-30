@@ -114,7 +114,6 @@ export default function Landing() {
           </div>
 
           <div className="relative">
-            <div className="absolute -inset-4 bg-gradient-to-br from-blue-500/5 via-purple-500/5 to-transparent rounded-2xl blur-xl" />
             <img
               src={HERO_IMG}
               alt="Datrena Footprint Chart Terminal"
