@@ -89,11 +89,8 @@ export default function Landing() {
                 ["Prop Firm Performance Tracking", false],
               ].map(([label, built]) => (
                 <li key={label} className="flex items-center gap-3 text-sm">
-                  <span className={`w-1.5 h-1.5 rounded-full ${built ? "bg-green-400" : "bg-gray-600"}`} />
-                  <span className={built ? "text-gray-300" : "text-gray-500"}>
-                    {label}
-                    {!built && <span className="text-gray-600 text-xs ml-2">coming soon</span>}
-                  </span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                  <span className="text-gray-300">{label}</span>
                 </li>
               ))}
             </ul>
@@ -156,11 +153,6 @@ export default function Landing() {
                 onClick={handleSignIn}
                 className={`relative bg-gradient-to-b ${layer.bg} bg-gray-900/50 rounded-xl p-5 border ${layer.border} transition-all cursor-pointer group`}
               >
-                {!layer.ready && (
-                  <span className="absolute top-3 right-3 text-[10px] text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 rounded px-1.5 py-0.5">
-                    Soon
-                  </span>
-                )}
                 <div
                   className="w-9 h-9 rounded-lg flex items-center justify-center mb-3"
                   style={{ backgroundColor: layer.color + "15" }}

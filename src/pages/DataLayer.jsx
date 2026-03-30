@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { RefreshCw, Wifi, WifiOff } from "lucide-react";
+import { RefreshCw, Wifi, WifiOff, ChevronsRight } from "lucide-react";
 import MainNav from "../components/navigation/MainNav";
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -100,6 +100,8 @@ export default function DataLayer() {
   const [dataMode,  setDataMode]  = useState("demo");
 
   const [countdown,  setCountdown]  = useState("");
+  const [showSnap,   setShowSnap]   = useState(false);
+  const snapTimerRef = useRef(null);
 
   const canvasRef    = useRef(null);
   const containerRef = useRef(null);
@@ -188,8 +190,10 @@ export default function DataLayer() {
       }
     }
 
-    // Clamp scroll
-    v.scrollX = Math.max(0, Math.min(totalW - vpW, v.scrollX));
+    // Clamp scroll — allow dragging past latest candle (extra half-viewport of empty space)
+    const maxScrollX = totalW + vpW / 2;
+    const minScrollX = -vpW / 2;
+    v.scrollX = Math.max(minScrollX, Math.min(maxScrollX, v.scrollX));
     v.scrollY = Math.max(0, Math.min(Math.max(0, totalH - vpH), v.scrollY));
 
     // Visible range
@@ -757,6 +761,23 @@ export default function DataLayer() {
     return () => clearInterval(interval);
   }, [timeframe]);
 
+  // ── Show/hide snap-to-latest button ──
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const v = view.current;
+      setShowSnap(v.userScrolled);
+    }, 300);
+    return () => clearInterval(iv);
+  }, []);
+
+  const snapToLatest = useCallback(() => {
+    const v = view.current;
+    v.userScrolled = false;
+    v.lastInteraction = 0;
+    setShowSnap(false);
+    scheduleDraw();
+  }, [scheduleDraw]);
+
   const label = ticker.replace("=F", "");
 
   return (
@@ -815,6 +836,24 @@ export default function DataLayer() {
       </div>
       <div ref={containerRef} style={{ flex: 1, position: "relative", overflow: "hidden" }}>
         <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
+        {showSnap && (
+          <button
+            onClick={snapToLatest}
+            style={{
+              position: "absolute", bottom: 90, right: 70,
+              background: "#1a2a4a", border: "1px solid #2a4a7a", borderRadius: 6,
+              color: "#60a5fa", padding: "6px 10px", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 4,
+              fontSize: 11, fontFamily: "sans-serif", fontWeight: 600,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.5)",
+              transition: "opacity 0.2s",
+              zIndex: 10,
+            }}
+            title="Snap to latest candle"
+          >
+            <ChevronsRight size={14} />
+          </button>
+        )}
       </div>
     </div>
   );

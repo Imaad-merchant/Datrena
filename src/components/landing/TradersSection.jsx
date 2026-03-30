@@ -182,18 +182,6 @@ export default function TradersSection({ onSignIn }) {
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 mb-16">
           {/* Left — description + feature list */}
           <div className="lg:col-span-2">
-            <div className="flex items-center gap-2 mb-3">
-              {!content.ready && (
-                <span className="text-[10px] text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 rounded px-2 py-0.5">
-                  In Development
-                </span>
-              )}
-              {content.ready && (
-                <span className="text-[10px] text-green-400 bg-green-500/10 border border-green-500/20 rounded px-2 py-0.5">
-                  Available Now
-                </span>
-              )}
-            </div>
             <p className="text-gray-400 text-sm mb-6 leading-relaxed">{content.description}</p>
 
             <div className="space-y-1">
@@ -237,7 +225,6 @@ export default function TradersSection({ onSignIn }) {
                   <div className="text-center">
                     {(() => { const FIcon = selectedFeature.icon; return <FIcon className="w-10 h-10 mx-auto mb-3" style={{ color: activeTabMeta.color + "40" }} />; })()}
                     <span className="text-gray-600 text-sm">{selectedFeature.title}</span>
-                    {!content.ready && <p className="text-gray-700 text-xs mt-1">Coming soon</p>}
                   </div>
                 </div>
               )}
