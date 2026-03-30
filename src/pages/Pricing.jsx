@@ -41,7 +41,7 @@ const PLANS = [
       { label: "All Timeframes (1m–30m)", included: true },
       { label: "Up to 4 Instruments", included: true },
       { label: "AI Quant Chat", included: true },
-      { label: "Volatility Charting", included: true, soon: true },
+      { label: "Volatility Charting", included: true},
       { label: "Prop Firm Tracking", included: false },
       { label: "Backtesting", included: false },
     ],
@@ -61,9 +61,9 @@ const PLANS = [
       { label: "All Timeframes (1m–30m)", included: true },
       { label: "Unlimited Instruments", included: true },
       { label: "AI Quant Chat", included: true },
-      { label: "Volatility Charting", included: true, soon: true },
-      { label: "Prop Firm Tracking", included: true, soon: true },
-      { label: "Backtesting & Validation", included: true, soon: true },
+      { label: "Volatility Charting", included: true},
+      { label: "Prop Firm Tracking", included: true},
+      { label: "Backtesting & Validation", included: true},
     ],
   },
 ];
@@ -128,7 +128,6 @@ export default function Pricing() {
                         : <X className="w-3.5 h-3.5 text-gray-700 shrink-0" />}
                       <span className={f.included ? "text-gray-300" : "text-gray-600"}>
                         {f.label}
-                        {f.soon && <span className="text-gray-600 text-[10px] ml-1">(soon)</span>}
                       </span>
                     </li>
                   ))}

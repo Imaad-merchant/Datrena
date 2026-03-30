@@ -96,15 +96,6 @@ export default function Features() {
                   <Icon className="w-4 h-4" style={{ color: section.color }} />
                 </div>
                 <h2 className="text-xl font-bold text-white">{section.title}</h2>
-                {section.ready ? (
-                  <span className="text-[10px] text-green-400 bg-green-500/10 border border-green-500/20 rounded px-2 py-0.5 ml-2">
-                    Available Now
-                  </span>
-                ) : (
-                  <span className="text-[10px] text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 rounded px-2 py-0.5 ml-2">
-                    In Development
-                  </span>
-                )}
               </div>
               <p className="text-gray-400 text-sm mb-8 max-w-2xl leading-relaxed">{section.description}</p>
 
