@@ -972,12 +972,29 @@ export default function DataLayer() {
     return () => ro.disconnect();
   }, [scheduleDraw]);
 
-  // ── Initialize with local history so chart is never empty ──
+  // ── Initialize with synthetic 1m history so chart is never empty ──
   useEffect(() => {
-    if (Object.keys(candlesRef.current).length === 0) {
-      const { ohlc, candles } = genDemo(BASES[ticker] || 5800, 600, timeframe);
-      candlesRef.current = candles;
-      ohlcRef.current = ohlc;
+    if (Object.keys(candlesRef.current).length === 0 && historyRef.current.length === 0) {
+      // Generate synthetic 1m candles and store them as history so TF changes can re-bucket
+      const base = BASES[ticker] || 5800;
+      const synth = [];
+      let price = base;
+      const now = new Date();
+      for (let i = 599; i >= 0; i--) {
+        const t = new Date(now.getTime() - i * 60000);
+        const range = (1 + srand(i * 7 + 3) * 3) * TICK;
+        const dir = srand(i * 13 + 7) > 0.45 ? 1 : -1;
+        price += (srand(i * 19 + 11) - 0.5) * 2 * TICK;
+        const o = parseFloat(price.toFixed(2));
+        const c = parseFloat((o + dir * range).toFixed(2));
+        const h = parseFloat((Math.max(o, c) + srand(i * 23 + 5) * TICK * 2).toFixed(2));
+        const l = parseFloat((Math.min(o, c) - srand(i * 29 + 9) * TICK * 2).toFixed(2));
+        const v = Math.round(200 + srand(i * 37 + 17) * 1800);
+        price = c;
+        synth.push({ time: t.toISOString().slice(0, 16), o, h, l, c, v });
+      }
+      historyRef.current = synth;
+      synth.forEach(candle => processHistoryCandle(candlesRef.current, ohlcRef.current, candle, timeframeRef.current));
       view.current.userScrolled = false;
       scheduleDraw();
     }
