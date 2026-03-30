@@ -67,10 +67,18 @@ function fmt(n) {
   return String(n);
 }
 
+function tfMinutes(tf) {
+  if (tf === "D") return 1440;
+  if (tf === "W") return 10080;
+  if (tf === "M") return 43200;
+  if (tf.endsWith("h")) return parseInt(tf) * 60;
+  return parseInt(tf) || 5;
+}
+
 function genDemo(base, n, tf) {
   const ohlc = {}, candles = {};
   const now = new Date();
-  const m = parseInt(tf) || 5;
+  const m = tfMinutes(tf);
   let price = base;
   for (let i = n - 1; i >= 0; i--) {
     const t = new Date(now.getTime() - i * m * 60000);
@@ -117,6 +125,7 @@ export default function DataLayer() {
     scrollX: 0,      // px scrolled into grid (0 = right edge shows latest)
     scrollY: 0,      // px scrolled down (0 = top of price range)
     dragging: false,
+    dragZone: null,  // "grid" | "price" | "time"
     lastX: 0,
     lastY: 0,
     userScrolled: false, // once true, don't auto-scroll on new data
@@ -246,13 +255,15 @@ export default function DataLayer() {
         clP = parseFloat((Math.round(bar.close / TICK) * TICK).toFixed(2));
       }
 
-      // Column separator
-      ctx.strokeStyle = "#1a1a28";
-      ctx.lineWidth = 0.5;
-      ctx.beginPath();
-      ctx.moveTo(x0 - 0.5, 0);
-      ctx.lineTo(x0 - 0.5, vpH);
-      ctx.stroke();
+      // Subtle column separator (only every 5th candle for reference)
+      if (bi % 5 === 0) {
+        ctx.strokeStyle = "rgba(30,30,45,0.3)";
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x0 - 0.5, 0);
+        ctx.lineTo(x0 - 0.5, vpH);
+        ctx.stroke();
+      }
 
       for (let pi = firstRow; pi <= lastRow; pi++) {
         const p  = allPrices[pi];
@@ -267,33 +278,26 @@ export default function DataLayer() {
         const inRange = hiP !== null && p <= hiP + 0.001 && p >= loP - 0.001;
         const isPOC   = Math.abs(p - pocP) < 0.001;
 
-        // Cell background
+        // Cell background (semi-transparent)
         if (tot > 0) {
           const askDom = cell.a >= cell.b;
           const intensity = Math.min(Math.max(cell.b, cell.a) / 200, 1);
+          const alpha = 0.25 + intensity * 0.3;
           if (askDom) {
-            ctx.fillStyle = `rgb(${Math.round(20 + intensity * 15)},${Math.round(40 + intensity * 60)},${Math.round(20 + intensity * 15)})`;
+            ctx.fillStyle = `rgba(30,${Math.round(60 + intensity * 80)},30,${alpha})`;
           } else {
-            ctx.fillStyle = `rgb(${Math.round(50 + intensity * 60)},${Math.round(18 + intensity * 10)},${Math.round(18 + intensity * 10)})`;
+            ctx.fillStyle = `rgba(${Math.round(70 + intensity * 80)},25,25,${alpha})`;
           }
-          ctx.fillRect(x0, y0, cW - 1, cH - 1);
+          ctx.fillRect(x0, y0, cW, cH);
         } else if (inBody) {
-          ctx.fillStyle = green ? "rgba(22,80,34,0.15)" : "rgba(80,22,22,0.15)";
-          ctx.fillRect(x0, y0, cW - 1, cH - 1);
+          ctx.fillStyle = green ? "rgba(22,80,34,0.08)" : "rgba(80,22,22,0.08)";
+          ctx.fillRect(x0, y0, cW, cH);
         }
 
         if (isPOC && tot > 0) {
-          ctx.fillStyle = "rgba(255,200,0,0.08)";
-          ctx.fillRect(x0, y0, cW - 1, cH - 1);
+          ctx.fillStyle = "rgba(255,200,0,0.06)";
+          ctx.fillRect(x0, y0, cW, cH);
         }
-
-        // Grid line
-        ctx.strokeStyle = "#1a1a26";
-        ctx.lineWidth = 0.5;
-        ctx.beginPath();
-        ctx.moveTo(x0, y0 + cH - 0.5);
-        ctx.lineTo(x0 + cW - 1, y0 + cH - 0.5);
-        ctx.stroke();
 
         if (!cell || tot === 0) continue;
 
@@ -319,24 +323,21 @@ export default function DataLayer() {
         ctx.textAlign = "right";
         ctx.fillText(String(cell.b), midX - 5, midY);
 
-        // Mini candlestick
+        // Mini candlestick (full height, no gaps)
         if (inRange) {
-          const candleW = 3;
+          const candleW = 5;
           const cx = midX - candleW / 2;
           if (inBody) {
-            ctx.fillStyle = green ? "#22dd66" : "#ee4444";
-            ctx.fillRect(cx, y0 + 2, candleW, cH - 4);
+            ctx.fillStyle = green ? "rgba(34,221,102,0.7)" : "rgba(238,68,68,0.7)";
+            ctx.fillRect(cx, y0, candleW, cH);
           } else {
-            ctx.strokeStyle = green ? "#22dd66" : "#ee4444";
-            ctx.lineWidth = 1;
+            ctx.strokeStyle = green ? "rgba(34,221,102,0.5)" : "rgba(238,68,68,0.5)";
+            ctx.lineWidth = 1.5;
             ctx.beginPath();
-            ctx.moveTo(midX, y0 + 2);
-            ctx.lineTo(midX, y0 + cH - 2);
+            ctx.moveTo(midX, y0);
+            ctx.lineTo(midX, y0 + cH);
             ctx.stroke();
           }
-        } else {
-          ctx.fillStyle = "#222233";
-          ctx.fillRect(midX - 0.5, midY - 0.5, 1, 1);
         }
 
         // Ask
@@ -407,12 +408,6 @@ export default function DataLayer() {
         ctx.fillText(fmt(vol), VOL_W - 4, y0 + cH / 2);
       }
 
-      ctx.strokeStyle = "#141420";
-      ctx.lineWidth = 0.5;
-      ctx.beginPath();
-      ctx.moveTo(0, y0 + cH - 0.5);
-      ctx.lineTo(VOL_W, y0 + cH - 0.5);
-      ctx.stroke();
     }
     ctx.restore();
 
@@ -589,11 +584,25 @@ export default function DataLayer() {
     if (!canvas) return;
     const v = view.current;
 
+    // dragZone: "grid" = pan, "price" = vertical zoom, "time" = horizontal zoom
+    function getDragZone(e) {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const W = rect.width;
+      const vpH = rect.height - FOOTER_H;
+      if (x >= W - PRICE_W && y < vpH) return "price";
+      if (y >= vpH) return "time";
+      return "grid";
+    }
+
     function onMouseDown(e) {
       v.dragging = true;
+      v.dragZone = getDragZone(e);
       v.lastX = e.clientX;
       v.lastY = e.clientY;
-      canvas.style.cursor = "grabbing";
+      canvas.style.cursor = v.dragZone === "grid" ? "grabbing" : "ns-resize";
+      if (v.dragZone === "time") canvas.style.cursor = "ew-resize";
     }
 
     function onMouseMove(e) {
@@ -604,23 +613,48 @@ export default function DataLayer() {
       if (v.dragging) {
         const dx = e.clientX - v.lastX;
         const dy = e.clientY - v.lastY;
-        v.scrollX -= dx;
-        v.scrollY -= dy;
+
+        if (v.dragZone === "price") {
+          // Drag on price axis: vertical zoom (drag up = zoom in, drag down = zoom out)
+          const zf = 1 - dy * 0.005;
+          const oldCH = v.cH;
+          v.cH = Math.max(MIN_CH, Math.min(MAX_CH, v.cH * zf));
+          v.scrollY = (v.scrollY + v.mouseY) * (v.cH / oldCH) - v.mouseY;
+        } else if (v.dragZone === "time") {
+          // Drag on time axis: horizontal zoom (drag right = zoom in, drag left = zoom out)
+          const zf = 1 + dx * 0.005;
+          const oldCW = v.cW;
+          v.cW = Math.max(MIN_CW, Math.min(MAX_CW, v.cW * zf));
+          v.scrollX = (v.scrollX + v.mouseX - VOL_W) * (v.cW / oldCW) - (v.mouseX - VOL_W);
+        } else {
+          // Grid: pan
+          v.scrollX -= dx;
+          v.scrollY -= dy;
+        }
+
         v.lastX = e.clientX;
         v.lastY = e.clientY;
         v.userScrolled = true;
         v.lastInteraction = Date.now();
+      } else {
+        // Update cursor based on hover zone
+        const zone = getDragZone(e);
+        if (zone === "price") canvas.style.cursor = "ns-resize";
+        else if (zone === "time") canvas.style.cursor = "ew-resize";
+        else canvas.style.cursor = "crosshair";
       }
       scheduleDraw();
     }
 
     function onMouseUp() {
       v.dragging = false;
+      v.dragZone = null;
       canvas.style.cursor = "crosshair";
     }
 
     function onMouseLeave() {
       v.dragging = false;
+      v.dragZone = null;
       v.mouseX = -1;
       v.mouseY = -1;
       canvas.style.cursor = "crosshair";
@@ -699,7 +733,7 @@ export default function DataLayer() {
 
   // ── Load data ──
   const loadData = useCallback((sym, tf) => {
-    const { ohlc, candles } = genDemo(BASES[sym] || 5800, 15, tf);
+    const { ohlc, candles } = genDemo(BASES[sym] || 5800, 200, tf);
     candlesRef.current = candles;
     ohlcRef.current = ohlc;
     view.current.userScrolled = false;
@@ -748,15 +782,24 @@ export default function DataLayer() {
 
   // ── Candle countdown timer ──
   useEffect(() => {
-    const mins = parseInt(timeframe) || 5;
+    const mins = tfMinutes(timeframe);
     const interval = setInterval(() => {
       const now = new Date();
-      const msIntoCandle = (now.getMinutes() % mins) * 60000 + now.getSeconds() * 1000 + now.getMilliseconds();
-      const msRemaining = mins * 60000 - msIntoCandle;
+      const totalMsInDay = now.getHours() * 3600000 + now.getMinutes() * 60000 + now.getSeconds() * 1000 + now.getMilliseconds();
+      const candleMs = mins * 60000;
+      const msIntoCandle = totalMsInDay % candleMs;
+      const msRemaining = candleMs - msIntoCandle;
       const totalSec = Math.ceil(msRemaining / 1000);
-      const m = Math.floor(totalSec / 60);
-      const s = totalSec % 60;
-      setCountdown(`${m}:${s.toString().padStart(2, "0")}`);
+      if (totalSec >= 3600) {
+        const h = Math.floor(totalSec / 3600);
+        const m = Math.floor((totalSec % 3600) / 60);
+        const s = totalSec % 60;
+        setCountdown(`${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`);
+      } else {
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
+        setCountdown(`${m}:${s.toString().padStart(2, "0")}`);
+      }
     }, 250);
     return () => clearInterval(interval);
   }, [timeframe]);
@@ -791,7 +834,7 @@ export default function DataLayer() {
           {label} · Footprint
         </span>
         <div style={{ display: "flex", gap: 3, marginLeft: 4 }}>
-          {["1m", "5m", "15m", "30m"].map(tf => (
+          {["1m", "2m", "3m", "5m", "10m", "15m", "30m", "1h", "4h", "D", "W", "M"].map(tf => (
             <button key={tf} onClick={() => setTimeframe(tf)} style={{
               background: timeframe === tf ? "#1a3660" : "transparent",
               border: "1px solid " + (timeframe === tf ? "#274e9e" : "#1e1e2c"),
