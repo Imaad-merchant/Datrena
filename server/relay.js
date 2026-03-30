@@ -89,7 +89,7 @@ const HAS_RITHMIC = process.env.RITHMIC_USER && process.env.RITHMIC_PASSWORD;
 if (!HAS_RITHMIC) {
   console.log("[relay] No Rithmic credentials — SIMULATION mode");
 
-  let price = 5812.0;
+  let price = 5579.0;
   _livePrice = price;
   let trend = 0;
 

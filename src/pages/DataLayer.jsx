@@ -16,7 +16,7 @@ const FOOTER_H  = SUM_ROWS * SUM_ROW_H + TIME_H;
 
 // Zoom — effectively unlimited
 const MIN_CW = 2;
-const MAX_CW = 2000;
+const MAX_CW = 200;
 const MIN_CH = 2;
 const MAX_CH = 200;
 const DEFAULT_CW = 72;
@@ -134,7 +134,7 @@ function processHistoryCandle(candlesObj, ohlcObj, candle, tf) {
   }
 }
 
-const BASES = { "ES=F": 5812, "NQ=F": 20150, "CL=F": 72.5, "GC=F": 2340 };
+const BASES = { "ES=F": 5579, "NQ=F": 19450, "CL=F": 69.5, "GC=F": 3085 };
 
 const TICKER_INFO = {
   "ES=F": { name: "S&P 500 E-mini", exchange: "CME" },
