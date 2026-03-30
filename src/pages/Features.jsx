@@ -78,6 +78,7 @@ const DATA_FEATURES = [
 /* ── Other layers (coming soon) ──────────────────────────────────────── */
 const FUTURE_SECTIONS = [
   {
+    id: "analysis-layer",
     title: "Analysis Layer",
     icon: TrendingUp,
     color: "#8b5cf6",
@@ -89,6 +90,7 @@ const FUTURE_SECTIONS = [
     ],
   },
   {
+    id: "insight-layer",
     title: "Insight Layer",
     icon: Lightbulb,
     color: "#f59e0b",
@@ -101,6 +103,7 @@ const FUTURE_SECTIONS = [
     ],
   },
   {
+    id: "validation-layer",
     title: "Validation Layer",
     icon: CheckCircle,
     color: "#10b981",
@@ -128,7 +131,7 @@ export default function Features() {
       </section>
 
       {/* ═══ Data Layer (live — expanded) ═══ */}
-      <section className="border-t border-gray-800/40 bg-black">
+      <section id="data-layer" className="border-t border-gray-800/40 bg-black">
         <div className="max-w-[1400px] mx-auto w-full px-6 lg:px-16 py-16">
           {/* Section header */}
           <div className="flex items-center gap-3 mb-2">
@@ -182,6 +185,7 @@ export default function Features() {
         return (
           <section
             key={section.title}
+            id={section.id}
             className={`border-t border-gray-800/40 ${si % 2 === 0 ? "bg-gray-950/30" : "bg-black"}`}
           >
             <div className="max-w-[1400px] mx-auto w-full px-6 lg:px-16 py-16">
