@@ -1,7 +1,11 @@
 import React, { useState } from "react";
-import { Database, TrendingUp, Lightbulb, CheckCircle, BarChart3, Activity, LineChart, PieChart, Calendar, Target, Shuffle, FlaskConical, Shield } from "lucide-react";
-
-const HERO_IMG = "https://media.base44.com/images/public/69a877fa3c3927b616239696/ea49b83e1_Screenshot2026-03-19at55922PM.png";
+import {
+  Database, TrendingUp, Lightbulb, CheckCircle,
+  BarChart3, Activity, LineChart, PieChart, Calendar, Target,
+  Shuffle, FlaskConical, Shield, Layers, Eye, Crosshair, Clock,
+  GitBranch, SlidersHorizontal, Timer,
+} from "lucide-react";
+import chartHeroImg from "../../assets/chart-hero.png";
 
 const TABS = [
   { key: "data", label: "Data Layer", icon: Database, color: "#3b82f6" },
@@ -12,114 +16,80 @@ const TABS = [
 
 const TAB_CONTENT = {
   data: {
-    description: "Stream real-time MBO Level 3 data from Rithmic and visualize every order event in the exchange's matching engine. The Data Layer is the foundation of Datrena.",
+    description: "Stream real-time MBO Level 3 data from Rithmic and visualize every order event in the exchange's matching engine. 7+ toggleable overlays built for professional futures traders.",
     ready: true,
     features: [
       {
-        label: "DOM Footprint",
+        label: "Order Flow Footprint",
         icon: BarChart3,
-        title: "DOM Footprint Chart",
-        description: "Canvas-based footprint chart rendering bid/ask volume at every price level. See order flow imbalances, POC (Point of Control), and volume profile in real time with tick-by-tick precision from Rithmic MBO data.",
+        title: "Order Flow Footprint Chart",
+        description: "Canvas-based footprint chart rendering bid/ask volume at every price level. Imbalance detection (3:1 ratio), Point of Control, session volume profile, and adaptive text that scales with zoom level.",
         hasImage: true,
       },
       {
-        label: "Delta / Volume",
+        label: "DOM Depth Heatmap",
+        icon: Layers,
+        title: "DOM Depth Heatmap Overlay",
+        description: "Real-time depth of market visualization overlaid on the chart background. Color-coded intensity shows where resting liquidity is concentrated across bid and ask levels. Toggle on/off from the MBO dropdown.",
+        hasImage: true,
+      },
+      {
+        label: "Iceberg Detection",
+        icon: Eye,
+        title: "Iceberg Order Detection",
+        description: "Automatic detection of hidden iceberg orders that repeatedly replenish at the same price level. Diamond markers on the chart show estimated hidden size, visible size, and fill count.",
+        hasImage: true,
+      },
+      {
+        label: "Order Tracking",
+        icon: Crosshair,
+        title: "Live Order Tracking",
+        description: "Visualize every order event directly on the chart — adds (green), cancels (red), modifies (yellow), and fills (white). See exactly how the order book is evolving at each price level in real time.",
+        hasImage: true,
+      },
+      {
+        label: "Pull Rate",
+        icon: Clock,
+        title: "Pull Rate Analysis",
+        description: "Track how often resting orders are pulled vs. filled at each price level. Color-coded bars on the price axis show pull rate intensity — high pull rates indicate potential spoofing or fake liquidity.",
+        hasImage: true,
+      },
+      {
+        label: "Delta & Volume",
         icon: Activity,
         title: "Delta & Volume Analysis",
-        description: "Track the net difference between aggressive buying and selling volume at each price level. Delta analysis reveals whether buyers or sellers are driving price movement. Includes per-candle delta, cumulative delta, and total volume summaries.",
-        hasImage: true,
-      },
-      {
-        label: "Candlestick Chart",
-        icon: LineChart,
-        title: "Candlestick Chart",
-        description: "OHLC candlestick visualization with mini-candles rendered inside each footprint cell. Multiple timeframes (1m, 5m, 15m, 30m) with a live countdown timer showing time remaining until the next candle closes.",
+        description: "Per-candle delta (aggressive buy vs. sell volume), cumulative delta across the session, and total volume summaries. Reveals whether buyers or sellers are driving each price move.",
         hasImage: true,
       },
     ],
   },
   analysis: {
-    description: "The Analysis Layer provides AI-powered statistical analysis on OHLCVD market data. Surface patterns, correlations, and edge across instruments and timeframes.",
+    description: "AI-powered statistical analysis on OHLCVD market data. Surface patterns, correlations, and edge across instruments and timeframes.",
     ready: false,
     features: [
-      {
-        label: "Volatility Charting",
-        icon: LineChart,
-        title: "Volatility Charting",
-        description: "Visualize volatility across time and price to identify regime shifts, mean-reversion opportunities, and trend continuation setups. Request volatility surfaces for any date range through the AI assistant.",
-      },
-      {
-        label: "Combinatorics",
-        icon: Shuffle,
-        title: "Combinatorial Analysis",
-        description: "Apply combinatorial analysis to discover statistically significant sequences of market events. Uncover non-obvious edge patterns invisible to traditional indicator-based analysis.",
-      },
-      {
-        label: "Data Analysis",
-        icon: PieChart,
-        title: "AI Data Analysis",
-        description: "Run deep quantitative analysis powered by AI on OHLCVD market data. Surface correlations, distributions, and behavioral patterns across multiple instruments and timeframes.",
-      },
+      { label: "Volatility Charting", icon: LineChart, title: "Volatility Charting", description: "Visualize volatility across time and price to identify regime shifts, mean-reversion opportunities, and trend continuation setups." },
+      { label: "Combinatorics", icon: Shuffle, title: "Combinatorial Analysis", description: "Discover statistically significant sequences of market events. Uncover non-obvious edge patterns invisible to traditional indicator-based analysis." },
+      { label: "Data Analysis", icon: PieChart, title: "AI Data Analysis", description: "Deep quantitative analysis powered by AI on OHLCVD market data. Surface correlations, distributions, and behavioral patterns." },
     ],
   },
   insight: {
     description: "Connect to your prop firm accounts and surface performance metrics, trade history, and risk analytics in one unified dashboard.",
     ready: false,
     features: [
-      {
-        label: "P&L Tracking",
-        icon: BarChart3,
-        title: "P&L Tracking",
-        description: "Monitor realized and unrealized profit and loss across all connected accounts in real time. Drill down by session, symbol, or date range.",
-      },
-      {
-        label: "Win Rate",
-        icon: Target,
-        title: "Win Rate Analytics",
-        description: "Track your win rate, average winner vs. average loser, and expectancy. Understand how these metrics evolve over time and under different market conditions.",
-      },
-      {
-        label: "Drawdown",
-        icon: Activity,
-        title: "Drawdown Monitoring",
-        description: "Monitor maximum peak-to-trough decline to stay within prop firm risk limits. Visualize drawdown curves to identify periods of underperformance before they escalate.",
-      },
-      {
-        label: "Calendar",
-        icon: Calendar,
-        title: "Trade Calendar Heatmap",
-        description: "Daily P&L displayed as a color-coded calendar heatmap. Instantly spot patterns in performance across days of the week, months, and sessions.",
-      },
+      { label: "P&L Tracking", icon: BarChart3, title: "P&L Tracking", description: "Monitor realized and unrealized profit and loss across all connected accounts in real time." },
+      { label: "Win Rate", icon: Target, title: "Win Rate Analytics", description: "Track your win rate, average winner vs. average loser, and expectancy across all trades." },
+      { label: "Drawdown", icon: Activity, title: "Drawdown Monitoring", description: "Monitor maximum peak-to-trough decline to stay within prop firm risk limits." },
+      { label: "Calendar", icon: Calendar, title: "Trade Calendar Heatmap", description: "Daily P&L displayed as a color-coded calendar heatmap. Spot patterns across days, months, and sessions." },
     ],
   },
   validation: {
-    description: "Rigorously test and validate trading strategies with historical data, walk-forward analysis, and statistical robustness checks before risking real capital.",
+    description: "Rigorously test and validate trading strategies with historical data, walk-forward analysis, and statistical robustness checks.",
     ready: false,
     features: [
-      {
-        label: "Backtesting",
-        icon: FlaskConical,
-        title: "Strategy Backtesting",
-        description: "Test strategies against historical data with tick-level accuracy. Evaluate performance across different market regimes, sessions, and instrument types.",
-      },
-      {
-        label: "Walk-Forward",
-        icon: TrendingUp,
-        title: "Walk-Forward Analysis",
-        description: "Continuously re-optimize on rolling windows and test on unseen data, ensuring your edge holds up across different market conditions without overfitting.",
-      },
-      {
-        label: "Monte Carlo",
-        icon: Shuffle,
-        title: "Monte Carlo Simulation",
-        description: "Run thousands of simulated trade sequences to understand the probability distribution of outcomes. Quantify worst-case drawdown scenarios before going live.",
-      },
-      {
-        label: "Risk Metrics",
-        icon: Shield,
-        title: "Risk-Adjusted Metrics",
-        description: "Evaluate strategies using Sharpe, Sortino, Calmar, and other industry-standard risk-adjusted performance measures beyond simple win rate or P&L.",
-      },
+      { label: "Backtesting", icon: FlaskConical, title: "Strategy Backtesting", description: "Test strategies against historical data with tick-level accuracy across different market regimes." },
+      { label: "Walk-Forward", icon: TrendingUp, title: "Walk-Forward Analysis", description: "Re-optimize on rolling windows and validate on unseen data, ensuring your edge holds up." },
+      { label: "Monte Carlo", icon: Shuffle, title: "Monte Carlo Simulation", description: "Run thousands of simulated trade sequences to understand probability distributions of outcomes." },
+      { label: "Risk Metrics", icon: Shield, title: "Risk-Adjusted Metrics", description: "Sharpe, Sortino, Calmar, and other risk-adjusted performance measures beyond simple P&L." },
     ],
   },
 };
@@ -161,6 +131,7 @@ export default function TradersSection({ onSignIn }) {
           {TABS.map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.key;
+            const isReady = TAB_CONTENT[tab.key].ready;
             return (
               <button
                 key={tab.key}
@@ -173,6 +144,9 @@ export default function TradersSection({ onSignIn }) {
               >
                 <Icon className="w-3.5 h-3.5" style={isActive ? { color: tab.color } : {}} />
                 {tab.label}
+                {isReady && (
+                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 ml-1">LIVE</span>
+                )}
               </button>
             );
           })}
@@ -209,22 +183,22 @@ export default function TradersSection({ onSignIn }) {
           {/* Right — feature detail */}
           <div className="lg:col-span-3">
             <div className="rounded-xl border border-gray-800/60 overflow-hidden bg-gray-950/50">
-              {/* Image or placeholder */}
               {selectedFeature.hasImage ? (
                 <img
-                  src={HERO_IMG}
+                  src={chartHeroImg}
                   alt={selectedFeature.title}
                   className="w-full object-cover"
-                  style={{ maxHeight: 300 }}
+                  style={{ maxHeight: 340 }}
                 />
               ) : (
                 <div
                   className="w-full flex items-center justify-center"
-                  style={{ height: 300, background: `linear-gradient(135deg, ${activeTabMeta.color}08, ${activeTabMeta.color}03)` }}
+                  style={{ height: 340, background: `linear-gradient(135deg, ${activeTabMeta.color}08, ${activeTabMeta.color}03)` }}
                 >
                   <div className="text-center">
                     {(() => { const FIcon = selectedFeature.icon; return <FIcon className="w-10 h-10 mx-auto mb-3" style={{ color: activeTabMeta.color + "40" }} />; })()}
                     <span className="text-gray-600 text-sm">{selectedFeature.title}</span>
+                    <div className="text-gray-700 text-xs mt-1">Coming Soon</div>
                   </div>
                 </div>
               )}
