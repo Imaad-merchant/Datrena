@@ -25,22 +25,40 @@ const TICK = 0.25;
 const wss = new WebSocketServer({ port: PORT });
 const clients = new Set();
 
-// Historical candles for backfill (1-minute resolution)
-const historyCandles = [];
-
 function srand(seed) {
   const x = Math.sin(seed * 9301 + 49297) * 233280;
   return x - Math.floor(x);
+}
+
+// Generate fresh history ending at a given price
+function generateHistory(endPrice) {
+  const candles = [];
+  let hp = endPrice - (srand(42) * 5 + 2);
+  for (let i = 599; i >= 0; i--) {
+    const t = new Date(Date.now() - i * 60000);
+    const s = i * 7 + 42;
+    const dir = srand(s) > 0.45 ? 1 : -1;
+    const range = (1 + srand(s + 3) * 3) * TICK;
+    hp += (srand(s + 11) - 0.48) * TICK * 2;
+    hp = Math.round(hp / TICK) * TICK;
+    const o = parseFloat(hp.toFixed(2));
+    const c = parseFloat((o + dir * range).toFixed(2));
+    const h = parseFloat((Math.max(o, c) + srand(s + 5) * TICK * 2).toFixed(2));
+    const l = parseFloat((Math.min(o, c) - srand(s + 9) * TICK * 2).toFixed(2));
+    const v = Math.round(200 + srand(s + 17) * 1800);
+    hp = c;
+    candles.push({ time: t.toISOString().slice(0, 16), o, h, l, c, v });
+  }
+  return candles;
 }
 
 wss.on("connection", (ws) => {
   clients.add(ws);
   console.log(`[relay] client connected (${clients.size} total)`);
 
-  // Send historical 1m candles on connect
-  if (historyCandles.length > 0) {
-    ws.send(JSON.stringify({ type: "history", candles: historyCandles }));
-  }
+  // Send fresh history ending at current price on each connect
+  const freshHistory = generateHistory(currentPrice());
+  ws.send(JSON.stringify({ type: "history", candles: freshHistory }));
 
   ws.on("close", () => {
     clients.delete(ws);
@@ -55,6 +73,10 @@ function broadcast(data) {
   }
 }
 
+// Global price accessor (set by simulation mode)
+let _livePrice = 5812.0;
+function currentPrice() { return _livePrice; }
+
 console.log(`[relay] WebSocket server listening on ws://localhost:${PORT}`);
 console.log(`[relay] Ticker: ${TICKER}`);
 
@@ -68,29 +90,8 @@ if (!HAS_RITHMIC) {
   console.log("[relay] No Rithmic credentials — SIMULATION mode");
 
   let price = 5812.0;
+  _livePrice = price;
   let trend = 0;
-
-  // ── Generate 600 historical 1-minute candles (10 hours) ──
-  (() => {
-    let hp = price - 3;
-    for (let i = 599; i >= 0; i--) {
-      const t = new Date(Date.now() - i * 60000);
-      const s = i * 7 + 42;
-      const dir = srand(s) > 0.45 ? 1 : -1;
-      const range = (1 + srand(s + 3) * 3) * TICK;
-      hp += (srand(s + 11) - 0.48) * TICK * 2;
-      hp = Math.round(hp / TICK) * TICK;
-      const o = parseFloat(hp.toFixed(2));
-      const c = parseFloat((o + dir * range).toFixed(2));
-      const h = parseFloat((Math.max(o, c) + srand(s + 5) * TICK * 2).toFixed(2));
-      const l = parseFloat((Math.min(o, c) - srand(s + 9) * TICK * 2).toFixed(2));
-      const v = Math.round(200 + srand(s + 17) * 1800);
-      hp = c;
-      historyCandles.push({ time: t.toISOString().slice(0, 16), o, h, l, c, v });
-    }
-    price = hp;
-    console.log(`[relay] Generated ${historyCandles.length} historical 1m candles`);
-  })();
 
   // ── Trade Simulation (~10/sec) ──
   function simulateTrade() {
@@ -98,6 +99,7 @@ if (!HAS_RITHMIC) {
     const move = trend > 0.1 ? TICK : trend < -0.1 ? -TICK : 0;
     if (Math.random() < 0.3) price += move;
     price = Math.round(price / TICK) * TICK;
+    _livePrice = price;
 
     const isBuy = Math.random() < (0.5 + trend * 0.3);
     const size = Math.ceil(Math.random() * 8);

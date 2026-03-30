@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { RefreshCw, Wifi, WifiOff, ChevronsRight, ChevronDown, Layers, Eye, EyeOff } from "lucide-react";
+import { Wifi, WifiOff, ChevronsRight, ChevronDown, Layers, Eye, EyeOff } from "lucide-react";
 import MainNav from "../components/navigation/MainNav";
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -160,11 +160,12 @@ export default function DataLayer() {
   const [status,    setStatus]    = useState("disconnected");
   const [ticker,    setTicker]    = useState("ES=F");
   const [timeframe, setTimeframe] = useState("5m");
-  const [dataMode,  setDataMode]  = useState("demo");
   const [countdown, setCountdown] = useState("");
   const [showSnap,  setShowSnap]  = useState(false);
   const [hoverBar,  setHoverBar]  = useState(null);
   const [showOverlayMenu, setShowOverlayMenu] = useState(false);
+  const [latency, setLatency] = useState(null);
+  const lastMsgTimeRef = useRef(0);
   const [overlays, setOverlays] = useState({
     footprint: true, depthHeatmap: false, restingOrders: false,
     orderTracking: false, queuePosition: false, icebergDetection: false, pullRate: false,
@@ -436,29 +437,43 @@ export default function DataLayer() {
       }
     }
 
-    // ── Resting Orders overlay ──
+    // ── Resting Orders overlay (drawn as bars at each price level across full width) ──
     if (ov.restingOrders) {
       const book = bookRef.current;
-      const maxSize = Math.max(...book.bids.map(b => b.size), ...book.asks.map(a => a.size), 1);
-      const lastX = VOL_W + (nCols - 1) * cW - v.scrollX;
+      if (book.bids.length || book.asks.length) {
+        const maxSize = Math.max(...book.bids.map(b => b.size), ...book.asks.map(a => a.size), 1);
 
-      [...book.bids, ...book.asks].forEach(({ price, size, orderCount }) => {
-        const isBid = book.bids.some(b => b.price === price);
-        const y0 = priceToY(price);
-        if (y0 < -cH || y0 > vpH) return;
+        book.bids.forEach(({ price, size, orderCount }) => {
+          const y0 = priceToY(price);
+          if (y0 < -cH || y0 > vpH) return;
+          const barW = (size / maxSize) * 60;
+          // Draw bar on right side of grid
+          ctx.fillStyle = "rgba(30,120,255,0.4)";
+          ctx.fillRect(VOL_W + vpW - barW - 2, y0 + 1, barW, cH - 2);
+          if (showText && cH >= 10) {
+            ctx.font = "bold 8px monospace";
+            ctx.fillStyle = "#4488ff";
+            ctx.textAlign = "right";
+            ctx.textBaseline = "middle";
+            ctx.fillText(`${size}`, VOL_W + vpW - barW - 4, y0 + cH / 2);
+          }
+        });
 
-        const barW = (size / maxSize) * cW * 0.8;
-        ctx.fillStyle = isBid ? "rgba(30,120,255,0.35)" : "rgba(255,60,60,0.35)";
-        ctx.fillRect(lastX + cW + 2, y0 + 2, barW, cH - 4);
-
-        if (showText) {
-          ctx.font = "bold 8px monospace";
-          ctx.fillStyle = isBid ? "#4488ff" : "#ff6666";
-          ctx.textAlign = "left";
-          ctx.textBaseline = "middle";
-          ctx.fillText(`${size} (${orderCount})`, lastX + cW + 4, y0 + cH / 2);
-        }
-      });
+        book.asks.forEach(({ price, size, orderCount }) => {
+          const y0 = priceToY(price);
+          if (y0 < -cH || y0 > vpH) return;
+          const barW = (size / maxSize) * 60;
+          ctx.fillStyle = "rgba(255,50,50,0.4)";
+          ctx.fillRect(VOL_W + vpW - barW - 2, y0 + 1, barW, cH - 2);
+          if (showText && cH >= 10) {
+            ctx.font = "bold 8px monospace";
+            ctx.fillStyle = "#ff5555";
+            ctx.textAlign = "right";
+            ctx.textBaseline = "middle";
+            ctx.fillText(`${size}`, VOL_W + vpW - barW - 4, y0 + cH / 2);
+          }
+        });
+      }
     }
 
     // ── Iceberg Detection overlay ──
@@ -957,36 +972,31 @@ export default function DataLayer() {
     return () => ro.disconnect();
   }, [scheduleDraw]);
 
-  // ── Load demo data ──
-  const loadData = useCallback((sym, tf) => {
-    const { ohlc, candles } = genDemo(BASES[sym] || 5800, 600, tf);
-    candlesRef.current = candles;
-    ohlcRef.current = ohlc;
-    view.current.userScrolled = false;
-    setDataMode("demo");
-    scheduleDraw();
-  }, [scheduleDraw]);
+  // ── Initialize with local history so chart is never empty ──
+  useEffect(() => {
+    if (Object.keys(candlesRef.current).length === 0) {
+      const { ohlc, candles } = genDemo(BASES[ticker] || 5800, 600, timeframe);
+      candlesRef.current = candles;
+      ohlcRef.current = ohlc;
+      view.current.userScrolled = false;
+      scheduleDraw();
+    }
+  }, []); // eslint-disable-line
 
-  useEffect(() => { loadData(ticker, timeframe); }, [ticker, loadData]); // eslint-disable-line
-
-  // ── WebSocket (NO timeframe dep — uses timeframeRef) ──
+  // ── WebSocket (always live, NO timeframe dep) ──
   useEffect(() => {
     let ws, timer;
     function connect() {
       ws = new WebSocket(WS_URL);
-      ws.onopen = () => {
-        setStatus("connected");
-        setDataMode("live");
-      };
+      ws.onopen = () => { setStatus("connected"); };
       ws.onerror = () => setStatus("error");
-      ws.onclose = () => { setStatus("disconnected"); timer = setTimeout(connect, 10000); };
+      ws.onclose = () => { setStatus("disconnected"); timer = setTimeout(connect, 3000); };
       ws.onmessage = e => {
         try {
           const d = JSON.parse(e.data);
           const tf = timeframeRef.current;
 
           if (d.type === "history") {
-            // Store 1m history and aggregate to current TF
             historyRef.current = d.candles || [];
             candlesRef.current = {};
             ohlcRef.current = {};
@@ -998,10 +1008,18 @@ export default function DataLayer() {
           }
 
           if (d.type === "trade") {
+            // Track latency
+            const msgTs = new Date(d.timestamp).getTime();
+            const now = Date.now();
+            const lat = now - msgTs;
+            if (lat >= 0 && lat < 10000) {
+              lastMsgTimeRef.current = lat;
+              if (now % 5 < 2) setLatency(lat); // throttle state updates
+            }
+
             rawTradesRef.current.push(d);
             if (rawTradesRef.current.length > 50000) rawTradesRef.current = rawTradesRef.current.slice(-40000);
             bucketTrade(candlesRef.current, ohlcRef.current, d, tf);
-            // Re-engage auto-follow after 5s idle
             const vw = view.current;
             if (vw.userScrolled && vw.lastInteraction && Date.now() - vw.lastInteraction > 5000) {
               vw.userScrolled = false;
@@ -1042,17 +1060,85 @@ export default function DataLayer() {
     return () => { clearTimeout(timer); if (ws) ws.close(); };
   }, [scheduleDraw]);
 
-  // ── Timeframe change — re-bucket without WS reconnect ──
+  // ── Client-side MBO simulation (generates data for overlay visualizations) ──
   useEffect(() => {
-    if (dataMode === "live") {
+    const iv = setInterval(() => {
+      const olc = ohlcRef.current;
+      const bks = Object.keys(olc).sort();
+      if (bks.length === 0) return;
+      const last = olc[bks[bks.length - 1]];
+      if (!last) return;
+      const p = last.close;
+
+      // Simulated order book
+      const bids = [], asks = [];
+      for (let i = 0; i < 10; i++) {
+        bids.push({
+          price: parseFloat((p - (i + 1) * TICK).toFixed(2)),
+          size: Math.round(50 + Math.random() * 200),
+          orderCount: Math.round(3 + Math.random() * 15),
+        });
+        asks.push({
+          price: parseFloat((p + (i + 1) * TICK).toFixed(2)),
+          size: Math.round(50 + Math.random() * 200),
+          orderCount: Math.round(3 + Math.random() * 15),
+        });
+      }
+      // Always update MBO data (relay overrides via WS messages when connected)
+      bookRef.current = { bids, asks };
+
+      // Simulated order events
+      const actions = ["add", "add", "modify", "cancel", "fill"];
+      const action = actions[Math.floor(Math.random() * actions.length)];
+      const side = Math.random() > 0.5 ? "bid" : "ask";
+      const offset = Math.ceil(Math.random() * 5) * TICK;
+      orderEventsRef.current.push({
+        action, orderId: Date.now(),
+        price: parseFloat((side === "bid" ? p - offset : p + offset).toFixed(2)),
+        size: Math.ceil(Math.random() * 20), side,
+        timestamp: new Date().toISOString(),
+      });
+      if (orderEventsRef.current.length > 500) orderEventsRef.current = orderEventsRef.current.slice(-400);
+
+      // Simulated iceberg alerts
+      if (Math.random() < 0.05) {
+        icebergAlertsRef.current.push({
+          price: parseFloat((p + (Math.random() > 0.5 ? 1 : -1) * TICK * Math.ceil(Math.random() * 3)).toFixed(2)),
+          side: Math.random() > 0.5 ? "bid" : "ask",
+          visibleSize: Math.round(10 + Math.random() * 30),
+          estimatedHiddenSize: Math.round(100 + Math.random() * 500),
+          fillCount: Math.round(5 + Math.random() * 20),
+          timestamp: new Date().toISOString(),
+        });
+        if (icebergAlertsRef.current.length > 50) icebergAlertsRef.current = icebergAlertsRef.current.slice(-40);
+      }
+
+      // Simulated pull rates
+      for (let i = -5; i <= 5; i++) {
+        if (i === 0) continue;
+        const pp = parseFloat((p + i * TICK).toFixed(2));
+        const addCount = Math.round(20 + Math.random() * 80);
+        const pullCount = Math.round(addCount * (0.2 + Math.random() * 0.6));
+        pullRateRef.current[`${pp}_${i < 0 ? "bid" : "ask"}`] = {
+          price: pp, side: i < 0 ? "bid" : "ask", addCount, pullCount,
+          pullRate: parseFloat((pullCount / addCount).toFixed(2)),
+        };
+      }
+
+      scheduleDraw();
+    }, 300);
+    return () => clearInterval(iv);
+  }, [scheduleDraw]);
+
+  // ── Timeframe change — re-bucket ──
+  useEffect(() => {
+    if (historyRef.current.length > 0 || rawTradesRef.current.length > 0) {
       candlesRef.current = {};
       ohlcRef.current = {};
       historyRef.current.forEach(c => processHistoryCandle(candlesRef.current, ohlcRef.current, c, timeframe));
       rawTradesRef.current.forEach(d => bucketTrade(candlesRef.current, ohlcRef.current, d, timeframe));
       view.current.userScrolled = false;
       scheduleDraw();
-    } else {
-      loadData(ticker, timeframe);
     }
   }, [timeframe]); // eslint-disable-line
 
@@ -1107,7 +1193,7 @@ export default function DataLayer() {
       {/* ── Toolbar ── */}
       <div style={{
         borderBottom: "1px solid #151520", background: "#0a0a10", padding: "6px 14px",
-        display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "nowrap", overflow: "hidden",
+        display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "nowrap", overflow: "visible", position: "relative", zIndex: 50,
       }}>
         {/* Ticker info */}
         <span style={{ fontWeight: 700, fontSize: 13, fontFamily: "sans-serif", color: "#c0c0d8" }}>{label}</span>
@@ -1200,24 +1286,24 @@ export default function DataLayer() {
           )}
         </div>
 
-        <button onClick={() => loadData(ticker, timeframe)}
-          style={{ background: "none", border: "none", color: "#303048", cursor: "pointer", padding: "2px 4px", display: "flex", alignItems: "center" }}>
-          <RefreshCw size={12} />
-        </button>
-
         {/* Right side: status */}
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, fontFamily: "sans-serif" }}>
-          {dataMode === "demo" && (
-            <span style={{ color: "#f59e0b", fontSize: 9, padding: "1px 6px", border: "1px solid #453000", borderRadius: 3, background: "#1a1500" }}>
-              DEMO
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontFamily: "sans-serif" }}>
+          {latency !== null && status === "connected" && (
+            <span style={{
+              fontSize: 9, fontFamily: "monospace", fontWeight: 600,
+              color: latency < 50 ? "#22c55e" : latency < 150 ? "#f59e0b" : "#ef4444",
+              background: "#0c0c14", border: "1px solid #1a1a2c", borderRadius: 3,
+              padding: "1px 6px",
+            }}>
+              {latency}ms
             </span>
           )}
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             {status === "connected"
               ? <Wifi size={11} style={{ color: "#22c55e" }} />
-              : <WifiOff size={11} style={{ color: "#282838" }} />}
-            <span style={{ color: status === "connected" ? "#22c55e" : "#282838", fontSize: 10 }}>
-              {status === "connected" ? "MBO Live" : "offline"}
+              : <WifiOff size={11} style={{ color: "#505060" }} />}
+            <span style={{ color: status === "connected" ? "#22c55e" : "#505060", fontSize: 10 }}>
+              {status === "connected" ? "MBO Live" : status === "disconnected" ? "Connecting…" : "Reconnecting…"}
             </span>
           </div>
         </div>
