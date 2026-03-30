@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { RefreshCw, Wifi, WifiOff, ChevronsRight } from "lucide-react";
+import { RefreshCw, Wifi, WifiOff, ChevronsRight, ChevronDown, Layers, Eye, EyeOff } from "lucide-react";
 import MainNav from "../components/navigation/MainNav";
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -7,19 +7,18 @@ const WS_URL = "ws://localhost:8080";
 const TICK   = 0.25;
 const IMB    = 3;
 
-// Fixed layout (px)
 const VOL_W   = 52;
 const PRICE_W = 58;
-const SUM_ROWS  = 3;   // Delta, CumΔ, Vol
+const SUM_ROWS  = 3;
 const SUM_ROW_H = 20;
 const TIME_H    = 22;
 const FOOTER_H  = SUM_ROWS * SUM_ROW_H + TIME_H;
 
-// Zoom limits
-const MIN_CW = 30;
-const MAX_CW = 150;
-const MIN_CH = 10;
-const MAX_CH = 40;
+// Zoom — effectively unlimited
+const MIN_CW = 2;
+const MAX_CW = 2000;
+const MIN_CH = 2;
+const MAX_CH = 200;
 const DEFAULT_CW = 72;
 const DEFAULT_CH = 20;
 
@@ -98,14 +97,63 @@ function genDemo(base, n, tf) {
   return { ohlc, candles };
 }
 
+// ── Trade bucketing helpers ──────────────────────────────────────────────────
+function bucketTrade(candlesObj, ohlcObj, d, tf) {
+  const ts = new Date(d.timestamp);
+  const tfMs = tfMinutes(tf) * 60000;
+  const floored = new Date(Math.floor(ts.getTime() / tfMs) * tfMs);
+  const bk = floored.toISOString().slice(0, 16);
+  const pl = parseFloat((Math.round(d.price / TICK) * TICK).toFixed(2));
+  if (!candlesObj[bk]) candlesObj[bk] = {};
+  if (!candlesObj[bk][pl]) candlesObj[bk][pl] = { b: 0, a: 0 };
+  candlesObj[bk][pl].b += d.bid_volume || 0;
+  candlesObj[bk][pl].a += d.ask_volume || 0;
+  const t = Math.floor(floored.getTime() / 1000);
+  if (!ohlcObj[bk]) ohlcObj[bk] = { time: t, open: d.price, high: d.price, low: d.price, close: d.price };
+  else { ohlcObj[bk].high = Math.max(ohlcObj[bk].high, d.price); ohlcObj[bk].low = Math.min(ohlcObj[bk].low, d.price); ohlcObj[bk].close = d.price; }
+}
+
+function processHistoryCandle(candlesObj, ohlcObj, candle, tf) {
+  const tfMs = tfMinutes(tf) * 60000;
+  const ts = new Date(candle.time + ":00Z").getTime();
+  const floored = new Date(Math.floor(ts / tfMs) * tfMs);
+  const bk = floored.toISOString().slice(0, 16);
+  const levels = distVol(candle.o, candle.h, candle.l, candle.c, candle.v, ts / 1000);
+  if (!candlesObj[bk]) candlesObj[bk] = {};
+  Object.entries(levels).forEach(([price, { b, a }]) => {
+    if (!candlesObj[bk][price]) candlesObj[bk][price] = { b: 0, a: 0 };
+    candlesObj[bk][price].b += b;
+    candlesObj[bk][price].a += a;
+  });
+  if (!ohlcObj[bk]) {
+    ohlcObj[bk] = { time: Math.floor(floored.getTime() / 1000), open: candle.o, high: candle.h, low: candle.l, close: candle.c };
+  } else {
+    ohlcObj[bk].high = Math.max(ohlcObj[bk].high, candle.h);
+    ohlcObj[bk].low = Math.min(ohlcObj[bk].low, candle.l);
+    ohlcObj[bk].close = candle.c;
+  }
+}
+
 const BASES = { "ES=F": 5812, "NQ=F": 20150, "CL=F": 72.5, "GC=F": 2340 };
 
 const TICKER_INFO = {
-  "ES=F": { name: "S&P 500 E-mini Futures", exchange: "CME", tick: "0.25" },
-  "NQ=F": { name: "Nasdaq 100 E-mini Futures", exchange: "CME", tick: "0.25" },
-  "CL=F": { name: "Crude Oil Futures", exchange: "NYMEX", tick: "0.01" },
-  "GC=F": { name: "Gold Futures", exchange: "COMEX", tick: "0.10" },
+  "ES=F": { name: "S&P 500 E-mini", exchange: "CME" },
+  "NQ=F": { name: "Nasdaq 100 E-mini", exchange: "CME" },
+  "CL=F": { name: "Crude Oil", exchange: "NYMEX" },
+  "GC=F": { name: "Gold", exchange: "COMEX" },
 };
+
+const TIMEFRAMES = ["1m","2m","3m","5m","10m","15m","30m","1h","4h","D","W","M"];
+
+const OVERLAY_DEFS = [
+  { key: "footprint",        label: "Order Flow Footprint" },
+  { key: "depthHeatmap",     label: "DOM Depth Heatmap" },
+  { key: "restingOrders",    label: "Resting Orders" },
+  { key: "orderTracking",    label: "Order Tracking" },
+  { key: "queuePosition",    label: "Queue Position" },
+  { key: "icebergDetection", label: "Iceberg Detection" },
+  { key: "pullRate",         label: "Pull Rate Analysis" },
+];
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function DataLayer() {
@@ -113,34 +161,43 @@ export default function DataLayer() {
   const [ticker,    setTicker]    = useState("ES=F");
   const [timeframe, setTimeframe] = useState("5m");
   const [dataMode,  setDataMode]  = useState("demo");
+  const [countdown, setCountdown] = useState("");
+  const [showSnap,  setShowSnap]  = useState(false);
+  const [hoverBar,  setHoverBar]  = useState(null);
+  const [showOverlayMenu, setShowOverlayMenu] = useState(false);
+  const [overlays, setOverlays] = useState({
+    footprint: true, depthHeatmap: false, restingOrders: false,
+    orderTracking: false, queuePosition: false, icebergDetection: false, pullRate: false,
+  });
 
-  const [countdown,  setCountdown]  = useState("");
-  const [showSnap,   setShowSnap]   = useState(false);
-  const [hoverBar,   setHoverBar]   = useState(null); // { o, h, l, c, vol, delta }
-  const snapTimerRef = useRef(null);
-  const hoverBarRef  = useRef(null);
+  const hoverBarRef    = useRef(null);
+  const canvasRef      = useRef(null);
+  const containerRef   = useRef(null);
+  const candlesRef     = useRef({});
+  const ohlcRef        = useRef({});
+  const rafRef         = useRef(null);
+  const cssSize        = useRef({ w: 0, h: 0 });
+  const timeframeRef   = useRef(timeframe);
+  const overlaysRef    = useRef(overlays);
 
-  const canvasRef    = useRef(null);
-  const containerRef = useRef(null);
-  const candlesRef   = useRef({});
-  const ohlcRef      = useRef({});
-  const rafRef       = useRef(null);
-  const cssSize      = useRef({ w: 0, h: 0 });
+  // MBO data refs
+  const historyRef       = useRef([]);
+  const rawTradesRef     = useRef([]);
+  const bookRef          = useRef({ bids: [], asks: [] });
+  const orderEventsRef   = useRef([]);
+  const icebergAlertsRef = useRef([]);
+  const pullRateRef      = useRef({});
 
-  // ── View state (pan/zoom) ──
+  useEffect(() => { timeframeRef.current = timeframe; }, [timeframe]);
+  useEffect(() => { overlaysRef.current = overlays; }, [overlays]);
+
   const view = useRef({
-    cW: DEFAULT_CW,  // cell width
-    cH: DEFAULT_CH,  // cell height
-    scrollX: 0,      // px scrolled into grid (0 = right edge shows latest)
-    scrollY: 0,      // px scrolled down (0 = top of price range)
-    dragging: false,
-    dragZone: null,  // "grid" | "price" | "time"
-    lastX: 0,
-    lastY: 0,
-    userScrolled: false, // once true, don't auto-scroll on new data
-    lastInteraction: 0,  // timestamp of last user pan/zoom
-    mouseX: -1,      // crosshair position
-    mouseY: -1,
+    cW: DEFAULT_CW, cH: DEFAULT_CH,
+    scrollX: 0, scrollY: 0,
+    dragging: false, dragZone: null,
+    lastX: 0, lastY: 0,
+    userScrolled: false, lastInteraction: 0,
+    mouseX: -1, mouseY: -1,
   });
 
   // ── Draw ───────────────────────────────────────────────────────────────────
@@ -160,13 +217,14 @@ export default function DataLayer() {
     const cH  = v.cH;
     const can = candlesRef.current;
     const olc = ohlcRef.current;
+    const ov  = overlaysRef.current;
 
     const buckets = Object.keys(can).sort();
     const priceSet = new Set();
     buckets.forEach(b => Object.keys(can[b] || {}).forEach(p => priceSet.add(+p)));
     const allPrices = Array.from(priceSet).sort((a, b) => b - a);
 
-    ctx.fillStyle = "#0e0e14";
+    ctx.fillStyle = "#0a0a10";
     ctx.fillRect(0, 0, W, H);
 
     if (buckets.length === 0 || allPrices.length === 0) {
@@ -180,55 +238,45 @@ export default function DataLayer() {
 
     const nCols = buckets.length;
     const nRows = allPrices.length;
-
-    // Viewport dimensions (the scrollable area between axes)
     const vpW = W - VOL_W - PRICE_W;
     const vpH = H - FOOTER_H;
-
-    // Total grid size
     const totalW = nCols * cW;
     const totalH = nRows * cH;
 
-    // Auto-scroll: show latest candles right-aligned, track current price vertically
+    // Helper: price to y coordinate
+    const topP = allPrices[0];
+    const priceToY = (p) => ((topP - p) / TICK) * cH - v.scrollY;
+
+    // Auto-scroll
     if (!v.userScrolled) {
       v.scrollX = Math.max(0, totalW - vpW);
-      // Center on the latest candle's close price
-      const lastBucket = buckets[buckets.length - 1];
-      const lastBar = olc[lastBucket];
+      const lastBar = olc[buckets[buckets.length - 1]];
       if (lastBar) {
         const closeP = parseFloat((Math.round(lastBar.close / TICK) * TICK).toFixed(2));
         const closeIdx = allPrices.indexOf(closeP);
-        if (closeIdx >= 0) {
-          v.scrollY = Math.max(0, closeIdx * cH - vpH / 2);
-        } else {
-          v.scrollY = Math.max(0, (totalH - vpH) / 2);
-        }
+        if (closeIdx >= 0) v.scrollY = Math.max(0, closeIdx * cH - vpH / 2);
+        else v.scrollY = Math.max(0, (totalH - vpH) / 2);
       } else {
         v.scrollY = Math.max(0, (totalH - vpH) / 2);
       }
     }
 
-    // Clamp scroll — allow dragging past latest candle (extra half-viewport of empty space)
-    const maxScrollX = totalW + vpW / 2;
-    const minScrollX = -vpW / 2;
-    v.scrollX = Math.max(minScrollX, Math.min(maxScrollX, v.scrollX));
-    v.scrollY = Math.max(0, Math.min(Math.max(0, totalH - vpH), v.scrollY));
+    // Clamp scroll
+    v.scrollX = Math.max(-vpW / 2, Math.min(totalW + vpW / 2, v.scrollX));
+    v.scrollY = Math.max(-vpH / 4, Math.min(Math.max(0, totalH - vpH / 2), v.scrollY));
 
-    // Visible range
     const firstCol = Math.max(0, Math.floor(v.scrollX / cW));
     const lastCol  = Math.min(nCols - 1, Math.ceil((v.scrollX + vpW) / cW));
-    const firstRow = Math.max(0, Math.floor(v.scrollY / cH));
+    const firstRow = Math.max(0, Math.floor(Math.max(0, v.scrollY) / cH));
     const lastRow  = Math.min(nRows - 1, Math.ceil((v.scrollY + vpH) / cH));
 
-    // Volume profile (across ALL candles, not just visible)
+    // Volume profile
     const vp = {};
-    buckets.forEach(b => Object.entries(can[b] || {}).forEach(([p, c]) => {
-      vp[p] = (vp[p] || 0) + c.b + c.a;
-    }));
+    buckets.forEach(b => Object.entries(can[b] || {}).forEach(([p, c]) => { vp[p] = (vp[p] || 0) + c.b + c.a; }));
     const maxV = Math.max(...Object.values(vp), 1);
     const pocP = allPrices.reduce((best, p) => (vp[p] || 0) > (vp[best] || 0) ? p : best, allPrices[0]);
 
-    // Per-candle summaries (all candles for footer)
+    // Per-candle summaries
     let cumD = 0;
     const sums = buckets.map(b => {
       const cells = can[b] || {};
@@ -239,16 +287,40 @@ export default function DataLayer() {
       return { ask, bid, delta, cumD, vol: ask + bid };
     });
 
-    const fs = cH <= 16 ? 9 : 10;
+    const showText = cW >= 20 && cH >= 10;
+    const fs = Math.min(14, Math.max(8, Math.floor(cH * 0.45)));
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  MAIN GRID — clipped to viewport
-    // ══════════════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════════
+    //  MAIN GRID
+    // ════════════════════════════════════════════════════════════════════════
     ctx.save();
     ctx.beginPath();
     ctx.rect(VOL_W, 0, vpW, vpH);
     ctx.clip();
 
+    // ── Depth Heatmap overlay (background) ──
+    if (ov.depthHeatmap) {
+      const book = bookRef.current;
+      if (book.bids.length || book.asks.length) {
+        const maxSize = Math.max(...book.bids.map(b => b.size), ...book.asks.map(a => a.size), 1);
+        book.bids.forEach(({ price, size }) => {
+          const y0 = priceToY(price);
+          if (y0 < -cH || y0 > vpH) return;
+          const intensity = size / maxSize;
+          ctx.fillStyle = `rgba(20,80,200,${0.04 + intensity * 0.18})`;
+          ctx.fillRect(VOL_W, y0, vpW, cH);
+        });
+        book.asks.forEach(({ price, size }) => {
+          const y0 = priceToY(price);
+          if (y0 < -cH || y0 > vpH) return;
+          const intensity = size / maxSize;
+          ctx.fillStyle = `rgba(200,40,40,${0.04 + intensity * 0.18})`;
+          ctx.fillRect(VOL_W, y0, vpW, cH);
+        });
+      }
+    }
+
+    // ── Main grid cells ──
     for (let bi = firstCol; bi <= lastCol; bi++) {
       const bucket = buckets[bi];
       const x0 = VOL_W + bi * cW - v.scrollX;
@@ -264,9 +336,9 @@ export default function DataLayer() {
         clP = parseFloat((Math.round(bar.close / TICK) * TICK).toFixed(2));
       }
 
-      // Subtle column separator (only every 5th candle for reference)
+      // Column separator
       if (bi % 5 === 0) {
-        ctx.strokeStyle = "rgba(30,30,45,0.3)";
+        ctx.strokeStyle = "rgba(25,25,40,0.25)";
         ctx.lineWidth = 0.5;
         ctx.beginPath();
         ctx.moveTo(x0 - 0.5, 0);
@@ -287,25 +359,40 @@ export default function DataLayer() {
         const inRange = hiP !== null && p <= hiP + 0.001 && p >= loP - 0.001;
         const isPOC   = Math.abs(p - pocP) < 0.001;
 
-        // Cell background (semi-transparent)
+        // Cell background
         if (tot > 0) {
           const askDom = cell.a >= cell.b;
           const intensity = Math.min(Math.max(cell.b, cell.a) / 200, 1);
-          const alpha = 0.25 + intensity * 0.3;
-          if (askDom) {
-            ctx.fillStyle = `rgba(30,${Math.round(60 + intensity * 80)},30,${alpha})`;
-          } else {
-            ctx.fillStyle = `rgba(${Math.round(70 + intensity * 80)},25,25,${alpha})`;
-          }
+          const alpha = 0.2 + intensity * 0.3;
+          if (askDom) ctx.fillStyle = `rgba(25,${Math.round(55 + intensity * 75)},25,${alpha})`;
+          else ctx.fillStyle = `rgba(${Math.round(65 + intensity * 75)},20,20,${alpha})`;
           ctx.fillRect(x0, y0, cW, cH);
         } else if (inBody) {
-          ctx.fillStyle = green ? "rgba(22,80,34,0.08)" : "rgba(80,22,22,0.08)";
+          ctx.fillStyle = green ? "rgba(22,80,34,0.06)" : "rgba(80,22,22,0.06)";
           ctx.fillRect(x0, y0, cW, cH);
         }
 
         if (isPOC && tot > 0) {
-          ctx.fillStyle = "rgba(255,200,0,0.06)";
+          ctx.fillStyle = "rgba(255,200,0,0.05)";
           ctx.fillRect(x0, y0, cW, cH);
+        }
+
+        // Mini candlestick (always draw, even when zoomed out)
+        if (inRange) {
+          const candleW = Math.max(2, Math.min(6, cW * 0.06));
+          const midX = x0 + cW / 2;
+          const cx = midX - candleW / 2;
+          if (inBody) {
+            ctx.fillStyle = green ? "rgba(34,197,94,0.65)" : "rgba(239,68,68,0.65)";
+            ctx.fillRect(cx, y0, candleW, cH);
+          } else {
+            ctx.strokeStyle = green ? "rgba(34,197,94,0.45)" : "rgba(239,68,68,0.45)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(midX, y0);
+            ctx.lineTo(midX, y0 + cH);
+            ctx.stroke();
+          }
         }
 
         if (!cell || tot === 0) continue;
@@ -316,49 +403,32 @@ export default function DataLayer() {
 
         // Imbalance border
         if (imb) {
-          ctx.strokeStyle = askDom ? "rgba(0,180,60,0.9)" : "rgba(220,40,40,0.9)";
+          ctx.strokeStyle = askDom ? "rgba(0,170,60,0.85)" : "rgba(210,40,40,0.85)";
           ctx.lineWidth = 1.5;
           ctx.strokeRect(x0 + 0.5, y0 + 0.5, cW - 2, cH - 2);
         }
 
-        // Bid [candle] Ask
-        const midY = y0 + cH / 2;
-        const midX = x0 + cW / 2;
-        ctx.textBaseline = "middle";
+        // Bid / Ask text (skip when zoomed out)
+        if (showText && ov.footprint) {
+          const midY = y0 + cH / 2;
+          const midX = x0 + cW / 2;
+          ctx.textBaseline = "middle";
 
-        // Bid
-        ctx.font = `${!askDom ? "bold" : "normal"} ${fs}px monospace`;
-        ctx.fillStyle = !askDom ? "#ff8888" : "#889988";
-        ctx.textAlign = "right";
-        ctx.fillText(String(cell.b), midX - 5, midY);
+          ctx.font = `${!askDom ? "bold" : "normal"} ${fs}px monospace`;
+          ctx.fillStyle = !askDom ? "#ef8888" : "#788878";
+          ctx.textAlign = "right";
+          ctx.fillText(String(cell.b), midX - 5, midY);
 
-        // Mini candlestick (full height, no gaps)
-        if (inRange) {
-          const candleW = 5;
-          const cx = midX - candleW / 2;
-          if (inBody) {
-            ctx.fillStyle = green ? "rgba(34,221,102,0.7)" : "rgba(238,68,68,0.7)";
-            ctx.fillRect(cx, y0, candleW, cH);
-          } else {
-            ctx.strokeStyle = green ? "rgba(34,221,102,0.5)" : "rgba(238,68,68,0.5)";
-            ctx.lineWidth = 1.5;
-            ctx.beginPath();
-            ctx.moveTo(midX, y0);
-            ctx.lineTo(midX, y0 + cH);
-            ctx.stroke();
-          }
+          ctx.font = `${askDom ? "bold" : "normal"} ${fs}px monospace`;
+          ctx.fillStyle = askDom ? "#5ee07a" : "#788878";
+          ctx.textAlign = "left";
+          ctx.fillText(String(cell.a), midX + 5, midY);
         }
-
-        // Ask
-        ctx.font = `${askDom ? "bold" : "normal"} ${fs}px monospace`;
-        ctx.fillStyle = askDom ? "#66ee88" : "#889988";
-        ctx.textAlign = "left";
-        ctx.fillText(String(cell.a), midX + 5, midY);
       }
 
-      // Live glow
+      // Live candle glow
       if (isLive) {
-        ctx.strokeStyle = "rgba(60,140,255,0.4)";
+        ctx.strokeStyle = "rgba(60,130,255,0.35)";
         ctx.lineWidth = 1.5;
         const y1 = firstRow * cH - v.scrollY;
         const y2 = (lastRow + 1) * cH - v.scrollY;
@@ -366,17 +436,146 @@ export default function DataLayer() {
       }
     }
 
+    // ── Resting Orders overlay ──
+    if (ov.restingOrders) {
+      const book = bookRef.current;
+      const maxSize = Math.max(...book.bids.map(b => b.size), ...book.asks.map(a => a.size), 1);
+      const lastX = VOL_W + (nCols - 1) * cW - v.scrollX;
+
+      [...book.bids, ...book.asks].forEach(({ price, size, orderCount }) => {
+        const isBid = book.bids.some(b => b.price === price);
+        const y0 = priceToY(price);
+        if (y0 < -cH || y0 > vpH) return;
+
+        const barW = (size / maxSize) * cW * 0.8;
+        ctx.fillStyle = isBid ? "rgba(30,120,255,0.35)" : "rgba(255,60,60,0.35)";
+        ctx.fillRect(lastX + cW + 2, y0 + 2, barW, cH - 4);
+
+        if (showText) {
+          ctx.font = "bold 8px monospace";
+          ctx.fillStyle = isBid ? "#4488ff" : "#ff6666";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.fillText(`${size} (${orderCount})`, lastX + cW + 4, y0 + cH / 2);
+        }
+      });
+    }
+
+    // ── Iceberg Detection overlay ──
+    if (ov.icebergDetection) {
+      const now = Date.now();
+      icebergAlertsRef.current.forEach(alert => {
+        const age = now - new Date(alert.timestamp).getTime();
+        if (age > 30000) return; // fade after 30s
+        const y0 = priceToY(alert.price);
+        if (y0 < -cH || y0 > vpH) return;
+        const alpha = Math.max(0.2, 1 - age / 30000);
+        const lastX = VOL_W + (nCols - 1) * cW - v.scrollX;
+
+        // Diamond marker
+        ctx.fillStyle = `rgba(255,200,0,${alpha * 0.8})`;
+        ctx.beginPath();
+        const cx = lastX + cW / 2;
+        const cy = y0 + cH / 2;
+        ctx.moveTo(cx, cy - 5);
+        ctx.lineTo(cx + 5, cy);
+        ctx.lineTo(cx, cy + 5);
+        ctx.lineTo(cx - 5, cy);
+        ctx.closePath();
+        ctx.fill();
+
+        if (showText) {
+          ctx.font = "bold 8px monospace";
+          ctx.fillStyle = `rgba(255,200,0,${alpha})`;
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.fillText(`ICE ~${alert.estimatedHiddenSize}`, cx + 8, cy);
+        }
+      });
+    }
+
+    // ── Order Tracking overlay ──
+    if (ov.orderTracking) {
+      const now = Date.now();
+      const recent = orderEventsRef.current.filter(e => now - new Date(e.timestamp).getTime() < 5000);
+      const lastX = VOL_W + (nCols - 1) * cW - v.scrollX;
+
+      recent.forEach(evt => {
+        const y0 = priceToY(evt.price);
+        if (y0 < -cH || y0 > vpH) return;
+        const age = now - new Date(evt.timestamp).getTime();
+        const alpha = Math.max(0.3, 1 - age / 5000);
+        const cx = lastX + cW * 0.3;
+        const cy = y0 + cH / 2;
+
+        if (evt.action === "add") {
+          ctx.fillStyle = `rgba(80,200,120,${alpha})`;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy - 3);
+          ctx.lineTo(cx + 3, cy + 2);
+          ctx.lineTo(cx - 3, cy + 2);
+          ctx.closePath();
+          ctx.fill();
+        } else if (evt.action === "cancel") {
+          ctx.strokeStyle = `rgba(255,100,100,${alpha})`;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(cx - 2, cy - 2);
+          ctx.lineTo(cx + 2, cy + 2);
+          ctx.moveTo(cx + 2, cy - 2);
+          ctx.lineTo(cx - 2, cy + 2);
+          ctx.stroke();
+        } else if (evt.action === "fill") {
+          ctx.fillStyle = `rgba(100,180,255,${alpha})`;
+          ctx.beginPath();
+          ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+
+    // ── Last price line ──
+    {
+      const lastBar = olc[buckets[nCols - 1]];
+      if (lastBar) {
+        const ly = priceToY(parseFloat((Math.round(lastBar.close / TICK) * TICK).toFixed(2)));
+        if (ly >= 0 && ly < vpH) {
+          ctx.strokeStyle = lastBar.close >= lastBar.open ? "rgba(34,197,94,0.5)" : "rgba(239,68,68,0.5)";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(VOL_W, ly + cH / 2);
+          ctx.lineTo(VOL_W + vpW, ly + cH / 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+    }
+
+    // ── POC line across grid ──
+    {
+      const pocY = priceToY(pocP);
+      if (pocY >= -cH && pocY < vpH + cH) {
+        ctx.strokeStyle = "rgba(255,180,0,0.2)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 4]);
+        ctx.beginPath();
+        ctx.moveTo(VOL_W, pocY + cH / 2);
+        ctx.lineTo(VOL_W + vpW, pocY + cH / 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
     // ── Crosshair ──
     if (v.mouseX >= VOL_W && v.mouseX < VOL_W + vpW && v.mouseY >= 0 && v.mouseY < vpH) {
-      ctx.strokeStyle = "rgba(255,255,255,0.12)";
+      ctx.strokeStyle = "rgba(255,255,255,0.1)";
       ctx.lineWidth = 0.5;
       ctx.setLineDash([4, 4]);
-      // Horizontal
       ctx.beginPath();
       ctx.moveTo(VOL_W, v.mouseY);
       ctx.lineTo(VOL_W + vpW, v.mouseY);
       ctx.stroke();
-      // Vertical
       ctx.beginPath();
       ctx.moveTo(v.mouseX, 0);
       ctx.lineTo(v.mouseX, vpH);
@@ -384,14 +583,13 @@ export default function DataLayer() {
       ctx.setLineDash([]);
     }
 
-    ctx.restore(); // end clip
+    ctx.restore(); // end main clip
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  VOLUME PROFILE (left, scrolls vertically)
-    // ══════════════════════════════════════════════════════════════════════════
-    ctx.fillStyle = "#0a0a10";
+    // ════════════════════════════════════════════════════════════════════════
+    //  VOLUME PROFILE (left)
+    // ════════════════════════════════════════════════════════════════════════
+    ctx.fillStyle = "#08080e";
     ctx.fillRect(0, 0, VOL_W, vpH);
-
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, VOL_W, vpH);
@@ -404,51 +602,62 @@ export default function DataLayer() {
       const isPOC = Math.abs(p - pocP) < 0.001;
       const y0 = pi * cH - v.scrollY;
 
-      ctx.globalAlpha = 0.55;
-      ctx.fillStyle = isPOC ? "#b060ff" : "#1a5090";
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = isPOC ? "#9050dd" : "#163870";
       ctx.fillRect(VOL_W - bw - 2, y0 + 1, bw, Math.max(1, cH - 2));
       ctx.globalAlpha = 1;
 
-      if (vol > 0) {
+      if (vol > 0 && cH >= 8) {
         ctx.font = `${isPOC ? "bold" : "normal"} 8px monospace`;
-        ctx.fillStyle = isPOC ? "#d4a0ff" : "#6688aa";
+        ctx.fillStyle = isPOC ? "#c090ff" : "#5577aa";
         ctx.textAlign = "right";
         ctx.textBaseline = "middle";
         ctx.fillText(fmt(vol), VOL_W - 4, y0 + cH / 2);
       }
-
     }
     ctx.restore();
 
-    // Vol/grid border
-    ctx.strokeStyle = "#252538";
+    ctx.strokeStyle = "#1a1a2c";
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(VOL_W - 0.5, 0);
     ctx.lineTo(VOL_W - 0.5, vpH);
     ctx.stroke();
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  PRICE AXIS (right, scrolls vertically)
-    // ══════════════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════════
+    //  PRICE AXIS (right)
+    // ════════════════════════════════════════════════════════════════════════
     const priceX = W - PRICE_W;
-    ctx.fillStyle = "#0a0a10";
+    ctx.fillStyle = "#08080e";
     ctx.fillRect(priceX, 0, PRICE_W, vpH);
-
     ctx.save();
     ctx.beginPath();
     ctx.rect(priceX, 0, PRICE_W, vpH);
     ctx.clip();
 
+    // Pull rate overlay on price axis
+    if (ov.pullRate) {
+      Object.values(pullRateRef.current).forEach(pr => {
+        const y0 = priceToY(pr.price);
+        if (y0 < -cH || y0 > vpH) return;
+        const barW = pr.pullRate * (PRICE_W - 4);
+        const color = pr.pullRate > 0.6 ? "rgba(255,140,0,0.4)" : pr.pullRate > 0.4 ? "rgba(255,200,60,0.25)" : "rgba(100,200,100,0.15)";
+        ctx.fillStyle = color;
+        ctx.fillRect(priceX + 2, y0 + 1, barW, cH - 2);
+      });
+    }
+
     for (let pi = firstRow; pi <= lastRow; pi++) {
       const p = allPrices[pi];
       const isPOC = Math.abs(p - pocP) < 0.001;
       const y0 = pi * cH - v.scrollY;
-      ctx.font = `${isPOC ? "bold" : "normal"} 9px monospace`;
-      ctx.fillStyle = isPOC ? "#f5a623" : "#404058";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "middle";
-      ctx.fillText(p.toFixed(2), priceX + 4, y0 + cH / 2);
+      if (cH >= 6) {
+        ctx.font = `${isPOC ? "bold" : "normal"} 9px monospace`;
+        ctx.fillStyle = isPOC ? "#f5a623" : "#353548";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText(p.toFixed(2), priceX + 4, y0 + cH / 2);
+      }
     }
 
     // Crosshair price label
@@ -456,47 +665,61 @@ export default function DataLayer() {
       const priceIdx = Math.floor((v.mouseY + v.scrollY) / cH);
       if (priceIdx >= 0 && priceIdx < nRows) {
         const labelY = priceIdx * cH - v.scrollY + cH / 2;
-        ctx.fillStyle = "#2a3a5a";
+        ctx.fillStyle = "#1a2a4a";
         ctx.fillRect(priceX, labelY - 8, PRICE_W, 16);
         ctx.font = "bold 9px monospace";
-        ctx.fillStyle = "#fff";
+        ctx.fillStyle = "#ddd";
         ctx.textAlign = "left";
         ctx.textBaseline = "middle";
         ctx.fillText(allPrices[priceIdx].toFixed(2), priceX + 4, labelY);
       }
     }
 
+    // Last price badge
+    {
+      const lastBar = olc[buckets[nCols - 1]];
+      if (lastBar) {
+        const lp = parseFloat((Math.round(lastBar.close / TICK) * TICK).toFixed(2));
+        const ly = priceToY(lp) + cH / 2;
+        if (ly >= 0 && ly < vpH) {
+          const color = lastBar.close >= lastBar.open ? "#22c55e" : "#ef4444";
+          ctx.fillStyle = color;
+          ctx.fillRect(priceX, ly - 8, PRICE_W, 16);
+          ctx.font = "bold 9px monospace";
+          ctx.fillStyle = "#fff";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.fillText(lp.toFixed(2), priceX + 4, ly);
+        }
+      }
+    }
+
     ctx.restore();
 
-    ctx.strokeStyle = "#252538";
+    ctx.strokeStyle = "#1a1a2c";
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(priceX + 0.5, 0);
     ctx.lineTo(priceX + 0.5, vpH);
     ctx.stroke();
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  SUMMARY FOOTER (bottom, scrolls horizontally)
-    // ══════════════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════════
+    //  SUMMARY FOOTER
+    // ════════════════════════════════════════════════════════════════════════
     const sumY = vpH;
-
-    // Background
-    ctx.fillStyle = "#0a0a12";
+    ctx.fillStyle = "#08080e";
     ctx.fillRect(0, sumY, W, FOOTER_H);
-
-    // Separator
-    ctx.strokeStyle = "#333348";
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#252538";
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(0, sumY + 1);
-    ctx.lineTo(W, sumY + 1);
+    ctx.moveTo(0, sumY + 0.5);
+    ctx.lineTo(W, sumY + 0.5);
     ctx.stroke();
 
-    // Labels
-    const labels = [["Delta", "#5588ff"], ["Cum.Δ", "#cc66cc"], ["Vol", "#888888"]];
+    const labels = [["Delta", "#4477ee"], ["Cum.Δ", "#bb66bb"], ["Vol", "#666"]];
     labels.forEach(([lbl, col], si) => {
       const ry = sumY + si * SUM_ROW_H;
-      ctx.fillStyle = "#0a0a12";
+      ctx.fillStyle = "#08080e";
       ctx.fillRect(0, ry + 2, VOL_W, SUM_ROW_H - 2);
       ctx.font = "bold 8px sans-serif";
       ctx.fillStyle = col;
@@ -505,7 +728,6 @@ export default function DataLayer() {
       ctx.fillText(lbl, VOL_W - 4, ry + SUM_ROW_H / 2);
     });
 
-    // Per-candle values (clipped to viewport width)
     ctx.save();
     ctx.beginPath();
     ctx.rect(VOL_W, sumY, vpW, FOOTER_H);
@@ -514,27 +736,26 @@ export default function DataLayer() {
     for (let bi = firstCol; bi <= lastCol; bi++) {
       const s = sums[bi];
       const x0 = VOL_W + bi * cW - v.scrollX;
-
       const rows = [
-        { v: s.delta, col: s.delta >= 0 ? "#5588ff" : "#ff6688", bg: s.delta >= 0 ? "rgba(55,88,255,0.1)" : "rgba(255,66,136,0.1)" },
-        { v: s.cumD,  col: s.cumD  >= 0 ? "#cc88ff" : "#ff88cc", bg: s.cumD  >= 0 ? "rgba(140,60,200,0.08)" : "rgba(255,60,140,0.08)" },
-        { v: s.vol,   col: "#aaaaaa", bg: "transparent" },
+        { v: s.delta, col: s.delta >= 0 ? "#4477ee" : "#ee5577", bg: s.delta >= 0 ? "rgba(44,77,238,0.08)" : "rgba(238,55,119,0.08)" },
+        { v: s.cumD,  col: s.cumD  >= 0 ? "#bb88ee" : "#ee88bb", bg: s.cumD  >= 0 ? "rgba(130,55,200,0.06)" : "rgba(238,55,130,0.06)" },
+        { v: s.vol,   col: "#888", bg: "transparent" },
       ];
-
       rows.forEach(({ v: val, col, bg }, si) => {
         const ry = sumY + si * SUM_ROW_H;
         if (bg !== "transparent") {
           ctx.fillStyle = bg;
           ctx.fillRect(x0, ry + 2, cW - 1, SUM_ROW_H - 2);
         }
-        ctx.font = "bold 9px sans-serif";
-        ctx.fillStyle = col;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        const pfx = si === 0 && val > 0 ? "+" : "";
-        ctx.fillText(pfx + fmt(val), x0 + cW / 2, ry + SUM_ROW_H / 2);
-
-        ctx.strokeStyle = "#1a1a28";
+        if (cW >= 15) {
+          ctx.font = "bold 9px sans-serif";
+          ctx.fillStyle = col;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          const pfx = si === 0 && val > 0 ? "+" : "";
+          ctx.fillText(pfx + fmt(val), x0 + cW / 2, ry + SUM_ROW_H / 2);
+        }
+        ctx.strokeStyle = "#111120";
         ctx.lineWidth = 0.5;
         ctx.beginPath();
         ctx.moveTo(x0, ry + SUM_ROW_H - 0.5);
@@ -545,9 +766,9 @@ export default function DataLayer() {
 
     // Time axis
     const timeY = sumY + SUM_ROWS * SUM_ROW_H;
-    ctx.fillStyle = "#0a0a12";
+    ctx.fillStyle = "#08080e";
     ctx.fillRect(VOL_W, timeY, vpW, TIME_H);
-    ctx.strokeStyle = "#1e1e2c";
+    ctx.strokeStyle = "#151520";
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(VOL_W, timeY + 0.5);
@@ -556,9 +777,10 @@ export default function DataLayer() {
 
     for (let bi = firstCol; bi <= lastCol; bi++) {
       const x0 = VOL_W + bi * cW - v.scrollX;
+      if (cW < 15 && bi % 3 !== 0) continue;
       const isLive = bi === nCols - 1;
       ctx.font = `${isLive ? "bold" : "normal"} 9px sans-serif`;
-      ctx.fillStyle = isLive ? "#4488ff" : "#303048";
+      ctx.fillStyle = isLive ? "#4488ff" : "#282840";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(buckets[bi].slice(11, 16), x0 + cW / 2, timeY + TIME_H / 2);
@@ -569,58 +791,47 @@ export default function DataLayer() {
       const colIdx = Math.floor((v.mouseX - VOL_W + v.scrollX) / cW);
       if (colIdx >= 0 && colIdx < nCols) {
         const labelX = VOL_W + colIdx * cW - v.scrollX + cW / 2;
-        const tw = 36;
-        ctx.fillStyle = "#2a3a5a";
-        ctx.fillRect(labelX - tw / 2, timeY + 2, tw, TIME_H - 4);
+        ctx.fillStyle = "#1a2a4a";
+        ctx.fillRect(labelX - 18, timeY + 2, 36, TIME_H - 4);
         ctx.font = "bold 9px sans-serif";
-        ctx.fillStyle = "#fff";
+        ctx.fillStyle = "#ddd";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(buckets[colIdx].slice(11, 16), labelX, timeY + TIME_H / 2);
       }
     }
 
-    // Compute hovered bar OHLCV for the info bar
+    ctx.restore();
+
+    // Hover bar computation
     if (v.mouseX >= VOL_W && v.mouseX < VOL_W + vpW) {
       const colIdx = Math.floor((v.mouseX - VOL_W + v.scrollX) / cW);
       if (colIdx >= 0 && colIdx < nCols) {
         const bar = olc[buckets[colIdx]];
-        const s = sums[colIdx];
-        if (bar) {
-          hoverBarRef.current = { o: bar.open, h: bar.high, l: bar.low, c: bar.close, vol: s.vol, delta: s.delta };
-        }
+        if (bar) hoverBarRef.current = { o: bar.open, h: bar.high, l: bar.low, c: bar.close };
       }
     } else {
-      // Show latest bar when not hovering
       const lastBar = olc[buckets[nCols - 1]];
-      const lastSum = sums[nCols - 1];
-      if (lastBar) {
-        hoverBarRef.current = { o: lastBar.open, h: lastBar.high, l: lastBar.low, c: lastBar.close, vol: lastSum.vol, delta: lastSum.delta };
-      }
+      if (lastBar) hoverBarRef.current = { o: lastBar.open, h: lastBar.high, l: lastBar.low, c: lastBar.close };
     }
-
-    ctx.restore();
   }, []);
 
   const scheduleDraw = useCallback(() => {
     if (!rafRef.current) rafRef.current = requestAnimationFrame(draw);
   }, [draw]);
 
-  // ── Mouse interaction (TradingView-style) ──────────────────────────────────
+  // ── Mouse interaction ──────────────────────────────────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const v = view.current;
 
-    // dragZone: "grid" = pan, "price" = vertical zoom, "time" = horizontal zoom
     function getDragZone(e) {
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      const W = rect.width;
-      const vpH = rect.height - FOOTER_H;
-      if (x >= W - PRICE_W && y < vpH) return "price";
-      if (y >= vpH) return "time";
+      if (x >= rect.width - PRICE_W && y < rect.height - FOOTER_H) return "price";
+      if (y >= rect.height - FOOTER_H) return "time";
       return "grid";
     }
 
@@ -629,8 +840,7 @@ export default function DataLayer() {
       v.dragZone = getDragZone(e);
       v.lastX = e.clientX;
       v.lastY = e.clientY;
-      canvas.style.cursor = v.dragZone === "grid" ? "grabbing" : "ns-resize";
-      if (v.dragZone === "time") canvas.style.cursor = "ew-resize";
+      canvas.style.cursor = v.dragZone === "grid" ? "grabbing" : v.dragZone === "time" ? "ew-resize" : "ns-resize";
     }
 
     function onMouseMove(e) {
@@ -638,29 +848,23 @@ export default function DataLayer() {
       v.mouseX = e.clientX - rect.left;
       v.mouseY = e.clientY - rect.top;
 
-      // Sync hoverBar ref to state for the info bar
-      if (hoverBarRef.current) {
-        setHoverBar({ ...hoverBarRef.current });
-      }
+      if (hoverBarRef.current) setHoverBar({ ...hoverBarRef.current });
 
       if (v.dragging) {
         const dx = e.clientX - v.lastX;
         const dy = e.clientY - v.lastY;
 
         if (v.dragZone === "price") {
-          // Drag on price axis: vertical zoom (drag up = zoom in, drag down = zoom out)
           const zf = 1 - dy * 0.005;
           const oldCH = v.cH;
           v.cH = Math.max(MIN_CH, Math.min(MAX_CH, v.cH * zf));
           v.scrollY = (v.scrollY + v.mouseY) * (v.cH / oldCH) - v.mouseY;
         } else if (v.dragZone === "time") {
-          // Drag on time axis: horizontal zoom (drag right = zoom in, drag left = zoom out)
           const zf = 1 + dx * 0.005;
           const oldCW = v.cW;
           v.cW = Math.max(MIN_CW, Math.min(MAX_CW, v.cW * zf));
           v.scrollX = (v.scrollX + v.mouseX - VOL_W) * (v.cW / oldCW) - (v.mouseX - VOL_W);
         } else {
-          // Grid: pan
           v.scrollX -= dx;
           v.scrollY -= dy;
         }
@@ -670,20 +874,13 @@ export default function DataLayer() {
         v.userScrolled = true;
         v.lastInteraction = Date.now();
       } else {
-        // Update cursor based on hover zone
         const zone = getDragZone(e);
-        if (zone === "price") canvas.style.cursor = "ns-resize";
-        else if (zone === "time") canvas.style.cursor = "ew-resize";
-        else canvas.style.cursor = "crosshair";
+        canvas.style.cursor = zone === "price" ? "ns-resize" : zone === "time" ? "ew-resize" : "crosshair";
       }
       scheduleDraw();
     }
 
-    function onMouseUp() {
-      v.dragging = false;
-      v.dragZone = null;
-      canvas.style.cursor = "crosshair";
-    }
+    function onMouseUp() { v.dragging = false; v.dragZone = null; canvas.style.cursor = "crosshair"; }
 
     function onMouseLeave() {
       v.dragging = false;
@@ -692,21 +889,16 @@ export default function DataLayer() {
       v.mouseY = -1;
       canvas.style.cursor = "crosshair";
       scheduleDraw();
-      // Show latest bar info when not hovering
-      if (hoverBarRef.current) {
-        setHoverBar({ ...hoverBarRef.current });
-      }
+      if (hoverBarRef.current) setHoverBar({ ...hoverBarRef.current });
     }
 
     function onWheel(e) {
       e.preventDefault();
       const zf = e.deltaY > 0 ? 0.94 : 1.06;
-
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left - VOL_W;
       const my = e.clientY - rect.top;
 
-      // Shift-scroll: zoom Y only. Ctrl-scroll: zoom X only. Otherwise both.
       if (!e.ctrlKey) {
         const oldCH = v.cH;
         v.cH = Math.max(MIN_CH, Math.min(MAX_CH, v.cH * zf));
@@ -717,14 +909,12 @@ export default function DataLayer() {
         v.cW = Math.max(MIN_CW, Math.min(MAX_CW, v.cW * zf));
         v.scrollX = (v.scrollX + mx) * (v.cW / oldCW) - mx;
       }
-
       v.userScrolled = true;
       v.lastInteraction = Date.now();
       scheduleDraw();
     }
 
     function onDblClick() {
-      // Reset to auto-fit
       v.cW = DEFAULT_CW;
       v.cH = DEFAULT_CH;
       v.userScrolled = false;
@@ -739,7 +929,6 @@ export default function DataLayer() {
     canvas.addEventListener("mouseleave", onMouseLeave);
     canvas.addEventListener("wheel", onWheel, { passive: false });
     canvas.addEventListener("dblclick", onDblClick);
-
     return () => {
       canvas.removeEventListener("mousedown", onMouseDown);
       canvas.removeEventListener("mousemove", onMouseMove);
@@ -768,9 +957,9 @@ export default function DataLayer() {
     return () => ro.disconnect();
   }, [scheduleDraw]);
 
-  // ── Load data ──
+  // ── Load demo data ──
   const loadData = useCallback((sym, tf) => {
-    const { ohlc, candles } = genDemo(BASES[sym] || 5800, 200, tf);
+    const { ohlc, candles } = genDemo(BASES[sym] || 5800, 600, tf);
     candlesRef.current = candles;
     ohlcRef.current = ohlc;
     view.current.userScrolled = false;
@@ -778,9 +967,9 @@ export default function DataLayer() {
     scheduleDraw();
   }, [scheduleDraw]);
 
-  useEffect(() => { loadData(ticker, timeframe); }, [ticker, timeframe, loadData]);
+  useEffect(() => { loadData(ticker, timeframe); }, [ticker, loadData]); // eslint-disable-line
 
-  // ── WebSocket ──
+  // ── WebSocket (NO timeframe dep — uses timeframeRef) ──
   useEffect(() => {
     let ws, timer;
     function connect() {
@@ -788,53 +977,93 @@ export default function DataLayer() {
       ws.onopen = () => {
         setStatus("connected");
         setDataMode("live");
-        // Clear demo data so live data doesn't overlap with different price range
-        candlesRef.current = {};
-        ohlcRef.current = {};
       };
       ws.onerror = () => setStatus("error");
       ws.onclose = () => { setStatus("disconnected"); timer = setTimeout(connect, 10000); };
       ws.onmessage = e => {
         try {
           const d = JSON.parse(e.data);
-          if (d.type !== "trade") return;
-          const ts = new Date(d.timestamp);
-          // Floor timestamp to current timeframe interval
-          const tfMs = tfMinutes(timeframe) * 60000;
-          const floored = new Date(Math.floor(ts.getTime() / tfMs) * tfMs);
-          const bk = floored.toISOString().slice(0, 16);
-          const pl = parseFloat((Math.round(d.price / TICK) * TICK).toFixed(2));
-          const c = candlesRef.current;
-          if (!c[bk]) c[bk] = {};
-          if (!c[bk][pl]) c[bk][pl] = { b: 0, a: 0 };
-          c[bk][pl].b += d.bid_volume || 0;
-          c[bk][pl].a += d.ask_volume || 0;
-          // Re-engage auto-follow after 5s of no user interaction
-          const vw = view.current;
-          if (vw.userScrolled && vw.lastInteraction && Date.now() - vw.lastInteraction > 5000) {
-            vw.userScrolled = false;
+          const tf = timeframeRef.current;
+
+          if (d.type === "history") {
+            // Store 1m history and aggregate to current TF
+            historyRef.current = d.candles || [];
+            candlesRef.current = {};
+            ohlcRef.current = {};
+            historyRef.current.forEach(c => processHistoryCandle(candlesRef.current, ohlcRef.current, c, tf));
+            rawTradesRef.current = [];
+            view.current.userScrolled = false;
+            scheduleDraw();
+            return;
           }
-          const o = ohlcRef.current;
-          const t = Math.floor(floored.getTime() / 1000);
-          if (!o[bk]) o[bk] = { time: t, open: d.price, high: d.price, low: d.price, close: d.price };
-          else { o[bk].high = Math.max(o[bk].high, d.price); o[bk].low = Math.min(o[bk].low, d.price); o[bk].close = d.price; }
-          scheduleDraw();
+
+          if (d.type === "trade") {
+            rawTradesRef.current.push(d);
+            if (rawTradesRef.current.length > 50000) rawTradesRef.current = rawTradesRef.current.slice(-40000);
+            bucketTrade(candlesRef.current, ohlcRef.current, d, tf);
+            // Re-engage auto-follow after 5s idle
+            const vw = view.current;
+            if (vw.userScrolled && vw.lastInteraction && Date.now() - vw.lastInteraction > 5000) {
+              vw.userScrolled = false;
+            }
+            scheduleDraw();
+            return;
+          }
+
+          if (d.type === "book_update") {
+            bookRef.current = { bids: d.bids || [], asks: d.asks || [] };
+            scheduleDraw();
+            return;
+          }
+
+          if (d.type === "order_event") {
+            orderEventsRef.current.push(d);
+            if (orderEventsRef.current.length > 500) orderEventsRef.current = orderEventsRef.current.slice(-400);
+            scheduleDraw();
+            return;
+          }
+
+          if (d.type === "iceberg_alert") {
+            icebergAlertsRef.current.push(d);
+            if (icebergAlertsRef.current.length > 50) icebergAlertsRef.current = icebergAlertsRef.current.slice(-40);
+            scheduleDraw();
+            return;
+          }
+
+          if (d.type === "pull_rate") {
+            pullRateRef.current[`${d.price}_${d.side}`] = d;
+            scheduleDraw();
+            return;
+          }
         } catch {}
       };
     }
     connect();
     return () => { clearTimeout(timer); if (ws) ws.close(); };
-  }, [scheduleDraw, timeframe]);
+  }, [scheduleDraw]);
 
-  // ── Candle countdown timer ──
+  // ── Timeframe change — re-bucket without WS reconnect ──
+  useEffect(() => {
+    if (dataMode === "live") {
+      candlesRef.current = {};
+      ohlcRef.current = {};
+      historyRef.current.forEach(c => processHistoryCandle(candlesRef.current, ohlcRef.current, c, timeframe));
+      rawTradesRef.current.forEach(d => bucketTrade(candlesRef.current, ohlcRef.current, d, timeframe));
+      view.current.userScrolled = false;
+      scheduleDraw();
+    } else {
+      loadData(ticker, timeframe);
+    }
+  }, [timeframe]); // eslint-disable-line
+
+  // ── Countdown ──
   useEffect(() => {
     const mins = tfMinutes(timeframe);
     const interval = setInterval(() => {
       const now = new Date();
       const totalMsInDay = now.getHours() * 3600000 + now.getMinutes() * 60000 + now.getSeconds() * 1000 + now.getMilliseconds();
       const candleMs = mins * 60000;
-      const msIntoCandle = totalMsInDay % candleMs;
-      const msRemaining = candleMs - msIntoCandle;
+      const msRemaining = candleMs - (totalMsInDay % candleMs);
       const totalSec = Math.ceil(msRemaining / 1000);
       if (totalSec >= 3600) {
         const h = Math.floor(totalSec / 3600);
@@ -850,23 +1079,18 @@ export default function DataLayer() {
     return () => clearInterval(interval);
   }, [timeframe]);
 
-  // ── Show/hide snap-to-latest button + sync hover bar ──
+  // ── Snap button + hoverbar sync ──
   useEffect(() => {
     const iv = setInterval(() => {
-      const v = view.current;
-      setShowSnap(v.userScrolled);
-      // Keep hover bar in sync (shows latest bar when not hovering)
-      if (hoverBarRef.current && !hoverBar) {
-        setHoverBar({ ...hoverBarRef.current });
-      }
+      setShowSnap(view.current.userScrolled);
+      if (hoverBarRef.current && !hoverBar) setHoverBar({ ...hoverBarRef.current });
     }, 300);
     return () => clearInterval(iv);
   }, [hoverBar]);
 
   const snapToLatest = useCallback(() => {
-    const v = view.current;
-    v.userScrolled = false;
-    v.lastInteraction = 0;
+    view.current.userScrolled = false;
+    view.current.lastInteraction = 0;
     setShowSnap(false);
     scheduleDraw();
   }, [scheduleDraw]);
@@ -874,83 +1098,132 @@ export default function DataLayer() {
   const label = ticker.replace("=F", "");
   const info = TICKER_INFO[ticker] || {};
   const barUp = hoverBar ? hoverBar.c >= hoverBar.o : false;
-  const barColor = barUp ? "#22dc6e" : "#ef4444";
+  const barColor = barUp ? "#22c55e" : "#ef4444";
 
   return (
-    <div style={{ height: "100vh", background: "#0e0e14", display: "flex", flexDirection: "column", fontFamily: "monospace", paddingLeft: "4rem" }}>
+    <div style={{ height: "100vh", background: "#0a0a10", display: "flex", flexDirection: "column", fontFamily: "monospace", paddingLeft: "4rem" }}>
       <MainNav />
+
+      {/* ── Toolbar ── */}
       <div style={{
-        borderBottom: "1px solid #1e1e2c", background: "#0c0c14", padding: "7px 16px",
-        display: "flex", alignItems: "center", gap: 10, flexShrink: 0, flexWrap: "nowrap", overflow: "hidden",
+        borderBottom: "1px solid #151520", background: "#0a0a10", padding: "6px 14px",
+        display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "nowrap", overflow: "hidden",
       }}>
-        <span style={{ fontWeight: 700, fontSize: 13, fontFamily: "sans-serif", color: "#c0c0d8" }}>
-          {label}
-        </span>
-        <span style={{ color: "#505068", fontSize: 10, fontFamily: "sans-serif", whiteSpace: "nowrap" }}>
+        {/* Ticker info */}
+        <span style={{ fontWeight: 700, fontSize: 13, fontFamily: "sans-serif", color: "#c0c0d8" }}>{label}</span>
+        <span style={{ color: "#404058", fontSize: 10, fontFamily: "sans-serif", whiteSpace: "nowrap" }}>
           {info.name} · {info.exchange}
         </span>
+
+        {/* OHLC (no volume/delta per user request) */}
         {hoverBar && (
           <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, fontFamily: "sans-serif", whiteSpace: "nowrap" }}>
-            <span style={{ color: "#606078" }}>O</span>
+            <span style={{ color: "#505060" }}>O</span>
             <span style={{ color: barColor, fontWeight: 600 }}>{hoverBar.o.toFixed(2)}</span>
-            <span style={{ color: "#606078", marginLeft: 4 }}>H</span>
+            <span style={{ color: "#505060", marginLeft: 3 }}>H</span>
             <span style={{ color: barColor, fontWeight: 600 }}>{hoverBar.h.toFixed(2)}</span>
-            <span style={{ color: "#606078", marginLeft: 4 }}>L</span>
+            <span style={{ color: "#505060", marginLeft: 3 }}>L</span>
             <span style={{ color: barColor, fontWeight: 600 }}>{hoverBar.l.toFixed(2)}</span>
-            <span style={{ color: "#606078", marginLeft: 4 }}>C</span>
+            <span style={{ color: "#505060", marginLeft: 3 }}>C</span>
             <span style={{ color: barColor, fontWeight: 600 }}>{hoverBar.c.toFixed(2)}</span>
-            <span style={{ color: "#606078", marginLeft: 4 }}>V</span>
-            <span style={{ color: "#aaa", fontWeight: 600 }}>{fmt(hoverBar.vol)}</span>
-            <span style={{ color: "#606078", marginLeft: 4 }}>Δ</span>
-            <span style={{ color: hoverBar.delta >= 0 ? "#5588ff" : "#ff6688", fontWeight: 600 }}>
-              {hoverBar.delta >= 0 ? "+" : ""}{fmt(hoverBar.delta)}
-            </span>
           </div>
         )}
-        <div style={{ display: "flex", gap: 3, marginLeft: 4 }}>
-          {["1m", "2m", "3m", "5m", "10m", "15m", "30m", "1h", "4h", "D", "W", "M"].map(tf => (
-            <button key={tf} onClick={() => setTimeframe(tf)} style={{
-              background: timeframe === tf ? "#1a3660" : "transparent",
-              border: "1px solid " + (timeframe === tf ? "#274e9e" : "#1e1e2c"),
-              color: timeframe === tf ? "#60a5fa" : "#3a3a54",
-              borderRadius: 3, padding: "2px 9px", fontSize: 10, cursor: "pointer", fontFamily: "sans-serif",
-            }}>{tf}</button>
-          ))}
-        </div>
+
+        {/* Timeframe dropdown */}
+        <select
+          value={timeframe}
+          onChange={e => setTimeframe(e.target.value)}
+          style={{
+            background: "#0c0c14", border: "1px solid #1a1a2c", color: "#60a5fa",
+            borderRadius: 3, padding: "3px 6px", fontSize: 10, fontFamily: "sans-serif",
+            cursor: "pointer", fontWeight: 600,
+          }}
+        >
+          {TIMEFRAMES.map(tf => <option key={tf} value={tf}>{tf}</option>)}
+        </select>
+
+        {/* Countdown */}
         <span style={{
           color: "#60a5fa", fontSize: 11, fontFamily: "monospace", fontWeight: 700,
-          background: "#0d1a2e", border: "1px solid #1a3060", borderRadius: 3,
+          background: "#0c1020", border: "1px solid #152040", borderRadius: 3,
           padding: "2px 8px", minWidth: 42, textAlign: "center", letterSpacing: 1,
         }}>{countdown}</span>
+
+        {/* Ticker selector */}
         <select value={ticker} onChange={e => setTicker(e.target.value)} style={{
-          background: "#0a0a12", border: "1px solid #1e1e2c", color: "#606078",
-          borderRadius: 3, padding: "2px 6px", fontSize: 10, fontFamily: "sans-serif", cursor: "pointer",
+          background: "#0c0c14", border: "1px solid #1a1a2c", color: "#505068",
+          borderRadius: 3, padding: "3px 6px", fontSize: 10, fontFamily: "sans-serif", cursor: "pointer",
         }}>
           <option value="ES=F">ES</option>
           <option value="NQ=F">NQ</option>
           <option value="CL=F">CL</option>
           <option value="GC=F">GC</option>
         </select>
+
+        {/* MBO Overlay dropdown */}
+        <div style={{ position: "relative" }}>
+          <button
+            onClick={() => setShowOverlayMenu(!showOverlayMenu)}
+            style={{
+              background: showOverlayMenu ? "#151520" : "#0c0c14",
+              border: "1px solid #1a1a2c", color: "#606078", borderRadius: 3,
+              padding: "3px 8px", fontSize: 10, cursor: "pointer", fontFamily: "sans-serif",
+              display: "flex", alignItems: "center", gap: 4,
+            }}
+          >
+            <Layers size={10} /> MBO <ChevronDown size={8} />
+          </button>
+          {showOverlayMenu && (
+            <div style={{
+              position: "absolute", top: "100%", left: 0, marginTop: 4, zIndex: 100,
+              background: "#10101a", border: "1px solid #252538", borderRadius: 6,
+              padding: "4px 0", minWidth: 210, boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
+            }}>
+              {OVERLAY_DEFS.map(d => (
+                <button
+                  key={d.key}
+                  onClick={() => setOverlays(prev => ({ ...prev, [d.key]: !prev[d.key] }))}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8, width: "100%",
+                    padding: "7px 12px", background: "none", border: "none",
+                    color: overlays[d.key] ? "#c0c0d8" : "#404058",
+                    fontSize: 11, fontFamily: "sans-serif", cursor: "pointer", textAlign: "left",
+                  }}
+                >
+                  {overlays[d.key]
+                    ? <Eye size={12} style={{ color: "#22c55e" }} />
+                    : <EyeOff size={12} style={{ color: "#303040" }} />}
+                  {d.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <button onClick={() => loadData(ticker, timeframe)}
-          style={{ background: "none", border: "none", color: "#3a3a54", cursor: "pointer", padding: "2px 4px", display: "flex", alignItems: "center" }}>
+          style={{ background: "none", border: "none", color: "#303048", cursor: "pointer", padding: "2px 4px", display: "flex", alignItems: "center" }}>
           <RefreshCw size={12} />
         </button>
+
+        {/* Right side: status */}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, fontFamily: "sans-serif" }}>
           {dataMode === "demo" && (
-            <span style={{ color: "#f59e0b", fontSize: 9, padding: "1px 6px", border: "1px solid #553300", borderRadius: 3 }}>
+            <span style={{ color: "#f59e0b", fontSize: 9, padding: "1px 6px", border: "1px solid #453000", borderRadius: 3, background: "#1a1500" }}>
               DEMO
             </span>
           )}
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             {status === "connected"
               ? <Wifi size={11} style={{ color: "#22c55e" }} />
-              : <WifiOff size={11} style={{ color: "#333" }} />}
-            <span style={{ color: status === "connected" ? "#22c55e" : "#333", fontSize: 10 }}>
+              : <WifiOff size={11} style={{ color: "#282838" }} />}
+            <span style={{ color: status === "connected" ? "#22c55e" : "#282838", fontSize: 10 }}>
               {status === "connected" ? "MBO Live" : "offline"}
             </span>
           </div>
         </div>
       </div>
+
+      {/* ── Canvas ── */}
       <div ref={containerRef} style={{ flex: 1, position: "relative", overflow: "hidden" }}>
         <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
         {showSnap && (
@@ -958,13 +1231,11 @@ export default function DataLayer() {
             onClick={snapToLatest}
             style={{
               position: "absolute", bottom: 90, right: 70,
-              background: "#1a2a4a", border: "1px solid #2a4a7a", borderRadius: 6,
+              background: "#12203a", border: "1px solid #1a3a6a", borderRadius: 6,
               color: "#60a5fa", padding: "6px 10px", cursor: "pointer",
               display: "flex", alignItems: "center", gap: 4,
               fontSize: 11, fontFamily: "sans-serif", fontWeight: 600,
-              boxShadow: "0 2px 8px rgba(0,0,0,0.5)",
-              transition: "opacity 0.2s",
-              zIndex: 10,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.5)", zIndex: 10,
             }}
             title="Snap to latest candle"
           >
