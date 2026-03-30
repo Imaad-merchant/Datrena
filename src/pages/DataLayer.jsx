@@ -18,13 +18,30 @@ export default function DataLayer() {
   const fetchData = async () => {
     setLoading(true);
     try {
+      const tickerMap = { ES: 'ES=F', NQ: 'NQ=F', CL: 'CL=F', GC: 'GC=F', RTY: 'RTY=F' };
+      const intervalMap = { '1 Minute': '1m', '5 Minute': '5m', '15 Minute': '15m', '30 Minute': '30m', '1 Hour': '60m' };
+      const rangeMap = { '1 Minute': '1d', '5 Minute': '5d', '15 Minute': '5d', '30 Minute': '1mo', '1 Hour': '1mo' };
+
       const res = await base44.functions.invoke('fetchYahooHistory', {
-        ticker: symbol === 'ES' ? 'ES=F' : symbol === 'NQ' ? 'NQ=F' : symbol === 'CL' ? 'CL=F' : symbol === 'GC' ? 'GC=F' : 'RTY=F',
-        period: '5d',
-        interval: timeframe === '1 Minute' ? '1m' : timeframe === '5 Minute' ? '5m' : timeframe === '15 Minute' ? '15m' : timeframe === '30 Minute' ? '30m' : '60m',
+        symbol: tickerMap[symbol],
+        interval: intervalMap[timeframe],
+        range: rangeMap[timeframe],
       });
-      const raw = res.data?.candles || res.data?.data || [];
-      if (raw.length) setCandles(raw);
+
+      const chart = res.data?.chart?.result?.[0];
+      if (chart) {
+        const timestamps = chart.timestamp || [];
+        const q = chart.indicators?.quote?.[0] || {};
+        const raw = timestamps.map((ts, i) => ({
+          timestamp: ts * 1000,
+          open: q.open?.[i],
+          high: q.high?.[i],
+          low: q.low?.[i],
+          close: q.close?.[i],
+          volume: q.volume?.[i],
+        })).filter(c => c.open && c.high && c.low && c.close);
+        setCandles(raw);
+      }
     } catch (e) {
       console.error(e);
     }
