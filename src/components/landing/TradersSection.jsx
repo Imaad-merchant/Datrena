@@ -1,246 +1,267 @@
 import React, { useState } from "react";
+import { Database, TrendingUp, Lightbulb, CheckCircle, BarChart3, Activity, LineChart, PieChart, Calendar, Target, Shuffle, FlaskConical, Shield } from "lucide-react";
 
-const TABS = ["Data layer", "Analysis Layer", "Insight Layer", "Validation Layer"];
+const HERO_IMG = "https://media.base44.com/images/public/69a877fa3c3927b616239696/ea49b83e1_Screenshot2026-03-19at55922PM.png";
+
+const TABS = [
+  { key: "data", label: "Data Layer", icon: Database, color: "#3b82f6" },
+  { key: "analysis", label: "Analysis Layer", icon: TrendingUp, color: "#8b5cf6" },
+  { key: "insight", label: "Insight Layer", icon: Lightbulb, color: "#f59e0b" },
+  { key: "validation", label: "Validation Layer", icon: CheckCircle, color: "#10b981" },
+];
 
 const TAB_CONTENT = {
-  "Data layer": {
-    description: "Level 3 is the most granular data feed available. It provides a real-time, unfiltered view of every individual order in the exchange's matching engine.",
+  data: {
+    description: "Stream real-time MBO Level 3 data from Rithmic and visualize every order event in the exchange's matching engine. The Data Layer is the foundation of Datrena.",
+    ready: true,
     features: [
       {
-        label: "Individual Order Visibility",
-        title: "Individual Order Visibility",
-        description: "See every single buy and sell order individually rather than grouped by price. This allows traders to distinguish between a single large institutional order and a cluster of smaller retail orders at the same price level.",
-        image: "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=800&q=80",
+        label: "DOM Footprint",
+        icon: BarChart3,
+        title: "DOM Footprint Chart",
+        description: "Canvas-based footprint chart rendering bid/ask volume at every price level. See order flow imbalances, POC (Point of Control), and volume profile in real time with tick-by-tick precision from Rithmic MBO data.",
+        hasImage: true,
       },
       {
-        label: "Queue Position Tracking",
-        title: "Queue Position Tracking",
-        description: "Monitor where your orders sit in the exchange queue relative to other participants. Understanding queue position helps traders time entries and exits more precisely in highly competitive markets.",
-        image: "https://images.unsplash.com/photo-1642790551116-18e150f248e3?w=800&q=80",
-      },
-      {
-        label: "Order Lifecycle Transparency",
-        title: "Order Lifecycle Transparency",
-        description: "Track the full lifecycle of each order from submission to fill, modification, or cancellation. This visibility exposes market microstructure patterns invisible in standard Level 1 or 2 feeds.",
-        image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80",
-      },
-      {
-        label: "Attributed Order IDs",
-        title: "Attributed Order IDs",
-        description: "Each order carries a unique ID allowing you to trace specific participants' activity across time. This enables detection of recurring algorithmic patterns and institutional order-routing behavior.",
-        image: "https://images.unsplash.com/photo-1518186285589-2f7649de83e0?w=800&q=80",
-      },
-      {
-        label: "Hidden Liquidity Detection",
-        title: "Hidden Liquidity Detection",
-        description: "Identify iceberg orders and dark pool activity that never appear in the standard order book. Detecting hidden liquidity gives traders an edge when anticipating large directional moves.",
-        image: "https://images.unsplash.com/photo-1504868584819-f8e8b4b6d7e3?w=800&q=80",
-      },
-      {
-        label: "Granular Backtesting",
-        title: "Granular Backtesting",
-        description: "Run strategies against tick-level historical data, capturing every order event instead of aggregated bars. This produces significantly more accurate performance estimates for high-frequency and microstructure-based systems.",
-        image: "https://images.unsplash.com/photo-1543286386-2e659306cd6c?w=800&q=80",
+        label: "Delta / Volume",
+        icon: Activity,
+        title: "Delta & Volume Analysis",
+        description: "Track the net difference between aggressive buying and selling volume at each price level. Delta analysis reveals whether buyers or sellers are driving price movement. Includes per-candle delta, cumulative delta, and total volume summaries.",
+        hasImage: true,
       },
       {
         label: "Candlestick Chart",
+        icon: LineChart,
         title: "Candlestick Chart",
-        description: "View price action rendered as traditional OHLC candlesticks across multiple timeframes. Combined with order flow data, candlestick charts reveal the context behind each price move.",
-        image: "https://media.base44.com/images/public/69a877fa3c3927b616239696/ea49b83e1_Screenshot2026-03-19at55922PM.png",
+        description: "OHLC candlestick visualization with mini-candles rendered inside each footprint cell. Multiple timeframes (1m, 5m, 15m, 30m) with a live countdown timer showing time remaining until the next candle closes.",
+        hasImage: true,
       },
     ],
   },
-  "Analysis Layer": {
-    description: "The Analysis Layer provides Artificial Intelligence with access to OHLCVD market data to perform automated statistical analytical tasks.",
+  analysis: {
+    description: "The Analysis Layer provides AI-powered statistical analysis on OHLCVD market data. Surface patterns, correlations, and edge across instruments and timeframes.",
+    ready: false,
     features: [
       {
         label: "Volatility Charting",
+        icon: LineChart,
         title: "Volatility Charting",
-        description: "Visualize volatility across time and price to identify regime shifts, mean-reversion opportunities, and trend continuation setups in real time.",
-        image: "https://images.unsplash.com/photo-1560221328-12fe60f83ab8?w=800&q=80",
+        description: "Visualize volatility across time and price to identify regime shifts, mean-reversion opportunities, and trend continuation setups. Request volatility surfaces for any date range through the AI assistant.",
       },
       {
         label: "Combinatorics",
-        title: "Combinatorics",
-        description: "Apply combinatorial analysis to discover statistically significant sequences of market events. This approach uncovers non-obvious edge patterns that are invisible to traditional indicator-based analysis.",
-        image: "https://images.unsplash.com/photo-1509228468518-180dd4864904?w=800&q=80",
+        icon: Shuffle,
+        title: "Combinatorial Analysis",
+        description: "Apply combinatorial analysis to discover statistically significant sequences of market events. Uncover non-obvious edge patterns invisible to traditional indicator-based analysis.",
       },
       {
         label: "Data Analysis",
-        title: "Data Analysis",
-        description: "Run deep quantitative analysis powered by AI on OHLCVD market data. Surface correlations, distributions, and behavioral patterns across multiple instruments and timeframes simultaneously.",
-        image: "https://images.unsplash.com/photo-1666875753105-c63a6f3bdc86?w=800&q=80",
+        icon: PieChart,
+        title: "AI Data Analysis",
+        description: "Run deep quantitative analysis powered by AI on OHLCVD market data. Surface correlations, distributions, and behavioral patterns across multiple instruments and timeframes.",
       },
     ],
   },
-  "Insight Layer": {
-    description: "The Insight Layer connects to your prop firm accounts and surfaces performance metrics, trade history, and risk analytics in one unified dashboard.",
+  insight: {
+    description: "Connect to your prop firm accounts and surface performance metrics, trade history, and risk analytics in one unified dashboard.",
+    ready: false,
     features: [
       {
         label: "P&L Tracking",
+        icon: BarChart3,
         title: "P&L Tracking",
-        description: "Monitor your realized and unrealized profit and loss across all connected accounts in real time. Drill down by session, symbol, or date range to understand exactly where your edge is performing.",
-        image: "https://images.unsplash.com/photo-1611532736597-de2d4265fba3?w=800&q=80",
+        description: "Monitor realized and unrealized profit and loss across all connected accounts in real time. Drill down by session, symbol, or date range.",
       },
       {
-        label: "Win Rate Analytics",
+        label: "Win Rate",
+        icon: Target,
         title: "Win Rate Analytics",
-        description: "Track your win rate, average winner vs. average loser, and expectancy across all trades. Understand how these metrics evolve over time and under different market conditions.",
-        image: "https://images.unsplash.com/photo-1526628953301-3cd7e2cf8d60?w=800&q=80",
+        description: "Track your win rate, average winner vs. average loser, and expectancy. Understand how these metrics evolve over time and under different market conditions.",
       },
       {
-        label: "Max Drawdown",
-        title: "Max Drawdown",
-        description: "Monitor your maximum peak-to-trough decline in real time to stay within prop firm risk limits. Visualize drawdown curves to identify periods of strategy underperformance before they escalate.",
-        image: "https://images.unsplash.com/photo-1535320903710-d993d3d77d29?w=800&q=80",
+        label: "Drawdown",
+        icon: Activity,
+        title: "Drawdown Monitoring",
+        description: "Monitor maximum peak-to-trough decline to stay within prop firm risk limits. Visualize drawdown curves to identify periods of underperformance before they escalate.",
       },
       {
-        label: "Trade Calendar Heatmap",
+        label: "Calendar",
+        icon: Calendar,
         title: "Trade Calendar Heatmap",
-        description: "See your daily P&L displayed as a color-coded calendar heatmap. Instantly spot patterns in your performance across days of the week, months, and market sessions.",
-        image: "https://images.unsplash.com/photo-1506784983877-45594efa4cbe?w=800&q=80",
-      },
-      {
-        label: "Prop Firm Integration",
-        title: "Prop Firm Integration",
-        description: "Connect directly to supported prop firms and automatically sync your trade history, account balances, and performance metrics without manual data entry.",
-        image: "https://images.unsplash.com/photo-1560472354-b33ff0c44a43?w=800&q=80",
-      },
-      {
-        label: "Performance Benchmarking",
-        title: "Performance Benchmarking",
-        description: "Compare your trading performance against community benchmarks and top-ranked strategies. Understand how your risk-adjusted returns stack up against other traders on the platform.",
-        image: "https://images.unsplash.com/photo-1591696205602-2f950c417cb9?w=800&q=80",
+        description: "Daily P&L displayed as a color-coded calendar heatmap. Instantly spot patterns in performance across days of the week, months, and sessions.",
       },
     ],
   },
-  "Validation Layer": {
-    description: "The Validation Layer lets you rigorously test and validate trading strategies with historical data, walk-forward analysis, and statistical robustness checks.",
+  validation: {
+    description: "Rigorously test and validate trading strategies with historical data, walk-forward analysis, and statistical robustness checks before risking real capital.",
+    ready: false,
     features: [
       {
-        label: "Strategy Backtesting",
+        label: "Backtesting",
+        icon: FlaskConical,
         title: "Strategy Backtesting",
-        description: "Test your trading strategies against years of historical data with precise tick-level accuracy. Evaluate performance across different market regimes, sessions, and instrument types.",
-        image: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80",
+        description: "Test strategies against historical data with tick-level accuracy. Evaluate performance across different market regimes, sessions, and instrument types.",
       },
       {
-        label: "Walk-Forward Analysis",
+        label: "Walk-Forward",
+        icon: TrendingUp,
         title: "Walk-Forward Analysis",
-        description: "Avoid overfitting by continuously re-optimizing your strategy on rolling windows and testing on unseen data, ensuring your edge holds up across different market regimes.",
-        image: "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=800&q=80",
+        description: "Continuously re-optimize on rolling windows and test on unseen data, ensuring your edge holds up across different market conditions without overfitting.",
       },
       {
-        label: "Monte Carlo Simulation",
+        label: "Monte Carlo",
+        icon: Shuffle,
         title: "Monte Carlo Simulation",
-        description: "Run thousands of simulated trade sequences to understand the probability distribution of your strategy's outcomes. Quantify worst-case drawdown scenarios before risking real capital.",
-        image: "https://images.unsplash.com/photo-1509228468518-180dd4864904?w=800&q=80",
+        description: "Run thousands of simulated trade sequences to understand the probability distribution of outcomes. Quantify worst-case drawdown scenarios before going live.",
       },
       {
-        label: "Risk-Adjusted Metrics",
+        label: "Risk Metrics",
+        icon: Shield,
         title: "Risk-Adjusted Metrics",
-        description: "Evaluate your strategy using Sharpe ratio, Sortino ratio, Calmar ratio, and other industry-standard risk-adjusted performance measures beyond simple win rate or P&L.",
-        image: "https://images.unsplash.com/photo-1543286386-2e659306cd6c?w=800&q=80",
-      },
-      {
-        label: "Parameter Optimization",
-        title: "Parameter Optimization",
-        description: "Systematically search for optimal strategy parameters using grid search and genetic algorithms. Visualize parameter sensitivity surfaces to identify robust configurations.",
-        image: "https://images.unsplash.com/photo-1518186285589-2f7649de83e0?w=800&q=80",
-      },
-      {
-        label: "Out-of-Sample Testing",
-        title: "Out-of-Sample Testing",
-        description: "Reserve a portion of your data exclusively for final validation, never touched during optimization. This provides an honest, unbiased estimate of how your strategy will perform in live markets.",
-        image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80",
+        description: "Evaluate strategies using Sharpe, Sortino, Calmar, and other industry-standard risk-adjusted performance measures beyond simple win rate or P&L.",
       },
     ],
   },
 };
 
 const EXCHANGES = [
-  { label: "CME: Includes ES (S&P 500), NQ (Nasdaq 100), and Currencies (6E, 6B)." },
-  { label: "CBOT: Includes YM (Dow), ZB/ZN (Bonds/Notes), and Grains." },
-  { label: "NYMEX: Includes CL (Crude Oil) and Natural Gas." },
-  { label: "COMEX: Includes GC (Gold) and SI Silver." },
+  { name: "CME", instruments: "ES (S&P 500), NQ (Nasdaq 100), 6E, 6B" },
+  { name: "CBOT", instruments: "YM (Dow), ZB (Bonds), ZN (Notes)" },
+  { name: "NYMEX", instruments: "CL (Crude Oil), NG (Natural Gas)" },
+  { name: "COMEX", instruments: "GC (Gold), SI (Silver)" },
 ];
 
 export default function TradersSection({ onSignIn }) {
-  const [activeTab, setActiveTab] = useState("Data layer");
+  const [activeTab, setActiveTab] = useState("data");
   const [activeFeature, setActiveFeature] = useState(0);
   const content = TAB_CONTENT[activeTab];
   const selectedFeature = content.features[activeFeature] || content.features[0];
+  const activeTabMeta = TABS.find(t => t.key === activeTab);
 
-  const handleTabChange = (tab) => {
-    setActiveTab(tab);
+  const handleTabChange = (key) => {
+    setActiveTab(key);
     setActiveFeature(0);
   };
 
   return (
-    <div className="bg-black px-10 py-16 border-t border-gray-800">
-      {/* Top row */}
-      <div className="flex gap-12 mb-10">
-        {/* Left */}
-        <div className="w-1/2">
-          <h2 className="text-4xl font-extrabold text-white leading-tight mb-6">
-            Datrena is<br />created by<br />traders for<br />traders
+    <section className="bg-black border-t border-gray-800/60">
+      <div className="max-w-[1400px] mx-auto w-full px-6 lg:px-16 py-20">
+        {/* Header */}
+        <div className="mb-12">
+          <h2 className="text-2xl lg:text-3xl font-bold text-white mb-3">
+            Built by Traders, for Traders
           </h2>
+          <p className="text-gray-500 text-sm max-w-lg">
+            Every feature is designed around real trading workflows. No bloat, no gimmicks — just the tools you need to read the tape and execute with confidence.
+          </p>
+        </div>
 
-          {/* Tabs */}
-          <div className="flex flex-wrap gap-2 mb-6">
-            {TABS.map(tab => (
+        {/* Tabs */}
+        <div className="flex flex-wrap gap-2 mb-8">
+          {TABS.map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.key;
+            return (
               <button
-                key={tab}
-                onClick={() => handleTabChange(tab)}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${
-                  activeTab === tab
-                    ? "bg-white text-black border-white"
-                    : "bg-transparent text-gray-300 border-gray-600 hover:border-gray-400"
+                key={tab.key}
+                onClick={() => handleTabChange(tab.key)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all border ${
+                  isActive
+                    ? "bg-gray-800 text-white border-gray-700"
+                    : "bg-transparent text-gray-500 border-gray-800/50 hover:border-gray-700 hover:text-gray-300"
                 }`}
               >
-                {tab}
+                <Icon className="w-3.5 h-3.5" style={isActive ? { color: tab.color } : {}} />
+                {tab.label}
               </button>
-            ))}
+            );
+          })}
+        </div>
+
+        {/* Content */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 mb-16">
+          {/* Left — description + feature list */}
+          <div className="lg:col-span-2">
+            <div className="flex items-center gap-2 mb-3">
+              {!content.ready && (
+                <span className="text-[10px] text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 rounded px-2 py-0.5">
+                  In Development
+                </span>
+              )}
+              {content.ready && (
+                <span className="text-[10px] text-green-400 bg-green-500/10 border border-green-500/20 rounded px-2 py-0.5">
+                  Available Now
+                </span>
+              )}
+            </div>
+            <p className="text-gray-400 text-sm mb-6 leading-relaxed">{content.description}</p>
+
+            <div className="space-y-1">
+              {content.features.map((f, i) => {
+                const FIcon = f.icon;
+                const isActive = activeFeature === i;
+                return (
+                  <button
+                    key={i}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm transition-all ${
+                      isActive
+                        ? "bg-gray-800/80 text-white"
+                        : "text-gray-500 hover:text-gray-300 hover:bg-gray-900/50"
+                    }`}
+                    onClick={() => setActiveFeature(i)}
+                  >
+                    <FIcon className="w-4 h-4 shrink-0" style={isActive ? { color: activeTabMeta.color } : {}} />
+                    {f.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          <p className="text-gray-400 text-sm mb-5 leading-relaxed">{content.description}</p>
-
-          <ul className="space-y-3">
-            {content.features.map((f, i) => (
-              <li key={i}>
-                <button
-                  className={`text-sm transition-colors text-left ${activeFeature === i ? 'text-white font-semibold' : 'text-blue-400 underline hover:text-blue-300'}`}
-                  onClick={() => setActiveFeature(i)}
+          {/* Right — feature detail */}
+          <div className="lg:col-span-3">
+            <div className="rounded-xl border border-gray-800/60 overflow-hidden bg-gray-950/50">
+              {/* Image or placeholder */}
+              {selectedFeature.hasImage ? (
+                <img
+                  src={HERO_IMG}
+                  alt={selectedFeature.title}
+                  className="w-full object-cover"
+                  style={{ maxHeight: 300 }}
+                />
+              ) : (
+                <div
+                  className="w-full flex items-center justify-center"
+                  style={{ height: 300, background: `linear-gradient(135deg, ${activeTabMeta.color}08, ${activeTabMeta.color}03)` }}
                 >
-                  {f.label}
-                </button>
-              </li>
+                  <div className="text-center">
+                    {(() => { const FIcon = selectedFeature.icon; return <FIcon className="w-10 h-10 mx-auto mb-3" style={{ color: activeTabMeta.color + "40" }} />; })()}
+                    <span className="text-gray-600 text-sm">{selectedFeature.title}</span>
+                    {!content.ready && <p className="text-gray-700 text-xs mt-1">Coming soon</p>}
+                  </div>
+                </div>
+              )}
+              <div className="p-5">
+                <h4 className="text-white font-semibold text-base mb-2">{selectedFeature.title}</h4>
+                <p className="text-gray-400 text-sm leading-relaxed">{selectedFeature.description}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Exchanges */}
+        <div>
+          <h3 className="text-white text-sm font-semibold mb-4">Supported Exchanges via Rithmic</h3>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {EXCHANGES.map(ex => (
+              <div key={ex.name} className="bg-gray-900/60 border border-gray-800/50 rounded-lg px-4 py-3">
+                <span className="text-white text-sm font-semibold">{ex.name}</span>
+                <p className="text-gray-500 text-xs mt-1">{ex.instruments}</p>
+              </div>
             ))}
-          </ul>
-        </div>
-
-        {/* Right */}
-        <div className="w-1/2 flex flex-col gap-4">
-          <img
-            src={selectedFeature.image}
-            alt={selectedFeature.title}
-            className="rounded-xl w-full object-cover"
-            style={{ maxHeight: 280 }}
-          />
-          <div>
-            <h4 className="text-white font-semibold mb-2">{selectedFeature.title}</h4>
-            <p className="text-gray-400 text-sm leading-relaxed">{selectedFeature.description}</p>
           </div>
         </div>
       </div>
-
-      {/* Exchange grid */}
-      <div className="grid grid-cols-2 gap-3 max-w-4xl">
-        {EXCHANGES.map((ex, i) => (
-          <div key={i} className="bg-gray-900 rounded-2xl px-5 py-4 text-gray-300 text-sm">
-            {ex.label}
-          </div>
-        ))}
-      </div>
-    </div>
+    </section>
   );
 }

@@ -1,0 +1,14 @@
+{
+  "name": "datrena-mbo-relay",
+  "version": "1.0.0",
+  "description": "Rithmic MBO → WebSocket relay for Datrena footprint chart",
+  "type": "module",
+  "scripts": {
+    "start": "node relay.js",
+    "dev": "node relay.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0",
+    "dotenv": "^16.4.0"
+  }
+}
