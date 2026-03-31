@@ -5,7 +5,6 @@ import {
   Shuffle, FlaskConical, Shield, Layers, Eye, Crosshair, Clock,
   GitBranch, SlidersHorizontal, Timer,
 } from "lucide-react";
-import chartHeroImg from "../../assets/chart-hero.png";
 
 const TABS = [
   { key: "data", label: "Data Layer", icon: Database, color: "#3b82f6" },
@@ -24,42 +23,36 @@ const TAB_CONTENT = {
         icon: BarChart3,
         title: "Order Flow Footprint Chart",
         description: "Canvas-based footprint chart rendering bid/ask volume at every price level. Imbalance detection (3:1 ratio), Point of Control, session volume profile, and adaptive text that scales with zoom level.",
-        hasImage: true,
       },
       {
         label: "DOM Depth Heatmap",
         icon: Layers,
         title: "DOM Depth Heatmap Overlay",
         description: "Real-time depth of market visualization overlaid on the chart background. Color-coded intensity shows where resting liquidity is concentrated across bid and ask levels. Toggle on/off from the MBO dropdown.",
-        hasImage: true,
       },
       {
         label: "Iceberg Detection",
         icon: Eye,
         title: "Iceberg Order Detection",
         description: "Automatic detection of hidden iceberg orders that repeatedly replenish at the same price level. Diamond markers on the chart show estimated hidden size, visible size, and fill count.",
-        hasImage: true,
       },
       {
         label: "Order Tracking",
         icon: Crosshair,
         title: "Live Order Tracking",
         description: "Visualize every order event directly on the chart — adds (green), cancels (red), modifies (yellow), and fills (white). See exactly how the order book is evolving at each price level in real time.",
-        hasImage: true,
       },
       {
         label: "Pull Rate",
         icon: Clock,
         title: "Pull Rate Analysis",
         description: "Track how often resting orders are pulled vs. filled at each price level. Color-coded bars on the price axis show pull rate intensity — high pull rates indicate potential spoofing or fake liquidity.",
-        hasImage: true,
       },
       {
         label: "Delta & Volume",
         icon: Activity,
         title: "Delta & Volume Analysis",
         description: "Per-candle delta (aggressive buy vs. sell volume), cumulative delta across the session, and total volume summaries. Reveals whether buyers or sellers are driving each price move.",
-        hasImage: true,
       },
     ],
   },
@@ -103,15 +96,9 @@ const EXCHANGES = [
 
 export default function TradersSection({ onSignIn }) {
   const [activeTab, setActiveTab] = useState("data");
-  const [activeFeature, setActiveFeature] = useState(0);
   const content = TAB_CONTENT[activeTab];
-  const selectedFeature = content.features[activeFeature] || content.features[0];
   const activeTabMeta = TABS.find(t => t.key === activeTab);
 
-  const handleTabChange = (key) => {
-    setActiveTab(key);
-    setActiveFeature(0);
-  };
 
   return (
     <section className="bg-black border-t border-gray-800/60">
@@ -135,7 +122,7 @@ export default function TradersSection({ onSignIn }) {
             return (
               <button
                 key={tab.key}
-                onClick={() => handleTabChange(tab.key)}
+                onClick={() => setActiveTab(tab.key)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all border ${
                   isActive
                     ? "bg-gray-800 text-white border-gray-700"
@@ -153,60 +140,30 @@ export default function TradersSection({ onSignIn }) {
         </div>
 
         {/* Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 mb-16">
-          {/* Left — description + feature list */}
-          <div className="lg:col-span-2">
-            <p className="text-gray-400 text-sm mb-6 leading-relaxed">{content.description}</p>
+        <div className="mb-16">
+          <p className="text-gray-400 text-sm mb-8 leading-relaxed max-w-2xl">{content.description}</p>
 
-            <div className="space-y-1">
-              {content.features.map((f, i) => {
-                const FIcon = f.icon;
-                const isActive = activeFeature === i;
-                return (
-                  <button
-                    key={i}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm transition-all ${
-                      isActive
-                        ? "bg-gray-800/80 text-white"
-                        : "text-gray-500 hover:text-gray-300 hover:bg-gray-900/50"
-                    }`}
-                    onClick={() => setActiveFeature(i)}
-                  >
-                    <FIcon className="w-4 h-4 shrink-0" style={isActive ? { color: activeTabMeta.color } : {}} />
-                    {f.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Right — feature detail */}
-          <div className="lg:col-span-3">
-            <div className="rounded-xl border border-gray-800/60 overflow-hidden bg-gray-950/50">
-              {selectedFeature.hasImage ? (
-                <img
-                  src={chartHeroImg}
-                  alt={selectedFeature.title}
-                  className="w-full object-cover"
-                  style={{ maxHeight: 340 }}
-                />
-              ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {content.features.map((f, i) => {
+              const FIcon = f.icon;
+              return (
                 <div
-                  className="w-full flex items-center justify-center"
-                  style={{ height: 340, background: `linear-gradient(135deg, ${activeTabMeta.color}08, ${activeTabMeta.color}03)` }}
+                  key={i}
+                  className="bg-gray-900/40 border border-gray-800/40 rounded-xl p-5 hover:border-gray-700/60 transition-all"
                 >
-                  <div className="text-center">
-                    {(() => { const FIcon = selectedFeature.icon; return <FIcon className="w-10 h-10 mx-auto mb-3" style={{ color: activeTabMeta.color + "40" }} />; })()}
-                    <span className="text-gray-600 text-sm">{selectedFeature.title}</span>
-                    <div className="text-gray-700 text-xs mt-1">Coming Soon</div>
+                  <div className="flex items-center gap-3 mb-3">
+                    <div
+                      className="w-8 h-8 rounded-lg flex items-center justify-center"
+                      style={{ backgroundColor: activeTabMeta.color + "12" }}
+                    >
+                      <FIcon className="w-4 h-4" style={{ color: activeTabMeta.color }} />
+                    </div>
+                    <h4 className="text-white text-sm font-semibold">{f.title}</h4>
                   </div>
+                  <p className="text-gray-500 text-xs leading-relaxed">{f.description}</p>
                 </div>
-              )}
-              <div className="p-5">
-                <h4 className="text-white font-semibold text-base mb-2">{selectedFeature.title}</h4>
-                <p className="text-gray-400 text-sm leading-relaxed">{selectedFeature.description}</p>
-              </div>
-            </div>
+              );
+            })}
           </div>
         </div>
 
