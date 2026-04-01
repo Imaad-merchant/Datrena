@@ -14,6 +14,7 @@ import Features from './pages/Features';
 import ForgeLabs from './pages/ForgeLabs';
 import GithubPRs from './pages/GithubPRs';
 import DataLayer from './pages/DataLayer';
+import Checkout from './pages/Checkout';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -45,6 +46,7 @@ const AuthenticatedApp = () => {
       <Route path="/ForgeLabs" element={<ForgeLabs />} />
       <Route path="/GithubPRs" element={<GithubPRs />} />
       <Route path="/DataLayer" element={<DataLayer />} />
+      <Route path="/Checkout" element={<Checkout />} />
       
       {/* Authenticated routes */}
       {user ? (

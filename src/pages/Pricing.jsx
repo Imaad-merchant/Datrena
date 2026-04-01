@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { Check, X, Zap, Shield, Crown, ArrowRight } from "lucide-react";
 import LandingNav from "../components/landing/LandingNav";
@@ -70,6 +70,7 @@ const PLANS = [
 
 export default function Pricing() {
   const [selected, setSelected] = useState("Trader");
+  const navigate = useNavigate();
 
   return (
     <div className="bg-black min-h-screen text-white">
@@ -136,7 +137,11 @@ export default function Pricing() {
                 <button
                   onClick={() => {
                     setSelected(plan.name);
-                    base44.auth.redirectToLogin("/QuantHome");
+                    if (plan.price === 0) {
+                      base44.auth.redirectToLogin("/QuantHome");
+                    } else {
+                      navigate(`/Checkout?plan=${plan.name}`);
+                    }
                   }}
                   className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all border ${
                     isSelected
