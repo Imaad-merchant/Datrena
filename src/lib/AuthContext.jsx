@@ -48,6 +48,19 @@ export const AuthProvider = ({ children }) => {
       } catch (appError) {
         console.error('App state check failed:', appError);
         
+        // Track failed API auth errors
+        if (appError.status === 403 || appError.status === 401) {
+          base44.analytics.track({
+            eventName: 'api_auth_error',
+            properties: {
+              error_type: 'app_auth_failed',
+              status: appError.status || null,
+              reason: appError.data?.extra_data?.reason || 'unknown',
+              message: appError.message || 'App authentication failed'
+            }
+          });
+        }
+        
         // Handle app-level errors
         if (appError.status === 403 && appError.data?.extra_data?.reason) {
           const reason = appError.data.extra_data.reason;
@@ -102,6 +115,14 @@ export const AuthProvider = ({ children }) => {
       
       // If user auth fails, it might be an expired token
       if (error.status === 401 || error.status === 403) {
+        base44.analytics.track({
+          eventName: 'api_auth_error',
+          properties: {
+            error_type: 'user_auth_failed',
+            status: error.status || null,
+            message: error.message || 'Authentication failed'
+          }
+        });
         setAuthError({
           type: 'auth_required',
           message: 'Authentication required'
