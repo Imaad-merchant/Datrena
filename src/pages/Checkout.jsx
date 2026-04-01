@@ -80,7 +80,7 @@ export default function Checkout() {
     // For now, simulate a brief processing delay
     setTimeout(() => {
       setProcessing(false);
-      setError("Payment processing is not yet connected. Stripe integration coming soon.");
+      setError("Payment processing is not yet connected.");
     }, 1500);
   };
 

@@ -19,19 +19,19 @@ const LAYERS = [
   },
   {
     title: "Analysis Layer", icon: TrendingUp, color: "#8b5cf6",
-    status: "Coming Soon", anchor: "/Features#analysis-layer",
+    status: null, anchor: "/Features#analysis-layer",
     description: "AI-driven statistical research on OHLCVD market data. Volatility surfaces, combinatorial analysis, and pattern discovery.",
     tags: ["Volatility Charting", "Combinatorics", "AI Analysis"],
   },
   {
     title: "Insight Layer", icon: Lightbulb, color: "#f59e0b",
-    status: "Coming Soon", anchor: "/Features#insight-layer",
+    status: null, anchor: "/Features#insight-layer",
     description: "Prop firm performance tracking — P&L, drawdown monitoring, win rate analytics, and trade calendar heatmaps.",
     tags: ["P&L Tracking", "Win Rate", "Drawdown", "Calendar"],
   },
   {
     title: "Validation Layer", icon: CheckCircle, color: "#10b981",
-    status: "Coming Soon", anchor: "/Features#validation-layer",
+    status: null, anchor: "/Features#validation-layer",
     description: "Backtest and validate strategies with walk-forward analysis, Monte Carlo simulation, and risk-adjusted metrics.",
     tags: ["Backtesting", "Walk-Forward", "Monte Carlo", "Risk Metrics"],
   },
@@ -140,11 +140,13 @@ export default function Landing() {
                   className="relative bg-gray-900/40 rounded-xl p-6 border border-gray-800/40 hover:border-gray-700/60 transition-all group cursor-pointer no-underline"
                 >
                   {/* Status badge */}
-                  <div className={`absolute top-4 right-4 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                    isLive ? "bg-blue-500/15 text-blue-400" : "bg-gray-800 text-gray-500"
-                  }`}>
-                    {layer.status}
-                  </div>
+                  {layer.status && (
+                    <div className={`absolute top-4 right-4 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                      isLive ? "bg-blue-500/15 text-blue-400" : "bg-gray-800 text-gray-500"
+                    }`}>
+                      {layer.status}
+                    </div>
+                  )}
 
                   <div
                     className="w-10 h-10 rounded-lg flex items-center justify-center mb-4"
