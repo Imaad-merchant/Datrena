@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Wifi, WifiOff, ChevronsRight, ChevronDown, Layers, Eye, EyeOff, Lock } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { RefreshCw, Wifi, WifiOff, ChevronsRight, ChevronDown, Layers, Eye, EyeOff } from "lucide-react";
 import MainNav from "../components/navigation/MainNav";
-import { usePlan } from "@/lib/PlanContext";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const WS_URL = "ws://localhost:8080";
@@ -18,7 +16,7 @@ const FOOTER_H  = SUM_ROWS * SUM_ROW_H + TIME_H;
 
 // Zoom — effectively unlimited
 const MIN_CW = 2;
-const MAX_CW = 200;
+const MAX_CW = 2000;
 const MIN_CH = 2;
 const MAX_CH = 200;
 const DEFAULT_CW = 72;
@@ -136,7 +134,7 @@ function processHistoryCandle(candlesObj, ohlcObj, candle, tf) {
   }
 }
 
-const BASES = { "ES=F": 5579, "NQ=F": 19450, "CL=F": 69.5, "GC=F": 3085 };
+const BASES = { "ES=F": 5812, "NQ=F": 20150, "CL=F": 72.5, "GC=F": 2340 };
 
 const TICKER_INFO = {
   "ES=F": { name: "S&P 500 E-mini", exchange: "CME" },
@@ -159,19 +157,14 @@ const OVERLAY_DEFS = [
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function DataLayer() {
-  const { plan, limits } = usePlan();
-  const navigate = useNavigate();
-  const [showUpgradeHint, setShowUpgradeHint] = useState(false);
   const [status,    setStatus]    = useState("disconnected");
   const [ticker,    setTicker]    = useState("ES=F");
   const [timeframe, setTimeframe] = useState("5m");
+  const [dataMode,  setDataMode]  = useState("demo");
   const [countdown, setCountdown] = useState("");
   const [showSnap,  setShowSnap]  = useState(false);
   const [hoverBar,  setHoverBar]  = useState(null);
   const [showOverlayMenu, setShowOverlayMenu] = useState(false);
-  const [latency, setLatency] = useState(null);
-  const [estTime, setEstTime] = useState("");
-  const lastMsgTimeRef = useRef(0);
   const [overlays, setOverlays] = useState({
     footprint: true, depthHeatmap: false, restingOrders: false,
     orderTracking: false, queuePosition: false, icebergDetection: false, pullRate: false,
@@ -294,8 +287,8 @@ export default function DataLayer() {
       return { ask, bid, delta, cumD, vol: ask + bid };
     });
 
-    const showText = true;
-    const fs = Math.min(14, Math.max(6, Math.floor(cH * 0.45)));
+    const showText = cW >= 20 && cH >= 10;
+    const fs = Math.min(14, Math.max(8, Math.floor(cH * 0.45)));
 
     // ════════════════════════════════════════════════════════════════════════
     //  MAIN GRID
@@ -443,43 +436,29 @@ export default function DataLayer() {
       }
     }
 
-    // ── Resting Orders overlay (drawn as bars at each price level across full width) ──
+    // ── Resting Orders overlay ──
     if (ov.restingOrders) {
       const book = bookRef.current;
-      if (book.bids.length || book.asks.length) {
-        const maxSize = Math.max(...book.bids.map(b => b.size), ...book.asks.map(a => a.size), 1);
+      const maxSize = Math.max(...book.bids.map(b => b.size), ...book.asks.map(a => a.size), 1);
+      const lastX = VOL_W + (nCols - 1) * cW - v.scrollX;
 
-        book.bids.forEach(({ price, size, orderCount }) => {
-          const y0 = priceToY(price);
-          if (y0 < -cH || y0 > vpH) return;
-          const barW = (size / maxSize) * 60;
-          // Draw bar on right side of grid
-          ctx.fillStyle = "rgba(30,120,255,0.4)";
-          ctx.fillRect(VOL_W + vpW - barW - 2, y0 + 1, barW, cH - 2);
-          if (showText && cH >= 10) {
-            ctx.font = "bold 8px monospace";
-            ctx.fillStyle = "#4488ff";
-            ctx.textAlign = "right";
-            ctx.textBaseline = "middle";
-            ctx.fillText(`${size}`, VOL_W + vpW - barW - 4, y0 + cH / 2);
-          }
-        });
+      [...book.bids, ...book.asks].forEach(({ price, size, orderCount }) => {
+        const isBid = book.bids.some(b => b.price === price);
+        const y0 = priceToY(price);
+        if (y0 < -cH || y0 > vpH) return;
 
-        book.asks.forEach(({ price, size, orderCount }) => {
-          const y0 = priceToY(price);
-          if (y0 < -cH || y0 > vpH) return;
-          const barW = (size / maxSize) * 60;
-          ctx.fillStyle = "rgba(255,50,50,0.4)";
-          ctx.fillRect(VOL_W + vpW - barW - 2, y0 + 1, barW, cH - 2);
-          if (showText && cH >= 10) {
-            ctx.font = "bold 8px monospace";
-            ctx.fillStyle = "#ff5555";
-            ctx.textAlign = "right";
-            ctx.textBaseline = "middle";
-            ctx.fillText(`${size}`, VOL_W + vpW - barW - 4, y0 + cH / 2);
-          }
-        });
-      }
+        const barW = (size / maxSize) * cW * 0.8;
+        ctx.fillStyle = isBid ? "rgba(30,120,255,0.35)" : "rgba(255,60,60,0.35)";
+        ctx.fillRect(lastX + cW + 2, y0 + 2, barW, cH - 4);
+
+        if (showText) {
+          ctx.font = "bold 8px monospace";
+          ctx.fillStyle = isBid ? "#4488ff" : "#ff6666";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.fillText(`${size} (${orderCount})`, lastX + cW + 4, y0 + cH / 2);
+        }
+      });
     }
 
     // ── Iceberg Detection overlay ──
@@ -668,20 +647,16 @@ export default function DataLayer() {
       });
     }
 
-    {
-      // Show every Nth price label so they don't overlap — min ~14px apart
-      const labelStep = cH >= 14 ? 1 : Math.max(1, Math.ceil(14 / cH));
-      for (let pi = firstRow; pi <= lastRow; pi++) {
-        const p = allPrices[pi];
-        const isPOC = Math.abs(p - pocP) < 0.001;
-        const y0 = pi * cH - v.scrollY;
-        if (isPOC || pi % labelStep === 0) {
-          ctx.font = `${isPOC ? "bold" : "normal"} 9px monospace`;
-          ctx.fillStyle = isPOC ? "#f5a623" : "#353548";
-          ctx.textAlign = "left";
-          ctx.textBaseline = "middle";
-          ctx.fillText(p.toFixed(2), priceX + 4, y0 + cH / 2);
-        }
+    for (let pi = firstRow; pi <= lastRow; pi++) {
+      const p = allPrices[pi];
+      const isPOC = Math.abs(p - pocP) < 0.001;
+      const y0 = pi * cH - v.scrollY;
+      if (cH >= 6) {
+        ctx.font = `${isPOC ? "bold" : "normal"} 9px monospace`;
+        ctx.fillStyle = isPOC ? "#f5a623" : "#353548";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText(p.toFixed(2), priceX + 4, y0 + cH / 2);
       }
     }
 
@@ -982,48 +957,36 @@ export default function DataLayer() {
     return () => ro.disconnect();
   }, [scheduleDraw]);
 
-  // ── Initialize with synthetic 1m history so chart is never empty ──
-  useEffect(() => {
-    if (Object.keys(candlesRef.current).length === 0 && historyRef.current.length === 0) {
-      // Generate synthetic 1m candles and store them as history so TF changes can re-bucket
-      const base = BASES[ticker] || 5800;
-      const synth = [];
-      let price = base;
-      const now = new Date();
-      for (let i = 599; i >= 0; i--) {
-        const t = new Date(now.getTime() - i * 60000);
-        const range = (1 + srand(i * 7 + 3) * 3) * TICK;
-        const dir = srand(i * 13 + 7) > 0.45 ? 1 : -1;
-        price += (srand(i * 19 + 11) - 0.5) * 2 * TICK;
-        const o = parseFloat(price.toFixed(2));
-        const c = parseFloat((o + dir * range).toFixed(2));
-        const h = parseFloat((Math.max(o, c) + srand(i * 23 + 5) * TICK * 2).toFixed(2));
-        const l = parseFloat((Math.min(o, c) - srand(i * 29 + 9) * TICK * 2).toFixed(2));
-        const v = Math.round(200 + srand(i * 37 + 17) * 1800);
-        price = c;
-        synth.push({ time: t.toISOString().slice(0, 16), o, h, l, c, v });
-      }
-      historyRef.current = synth;
-      synth.forEach(candle => processHistoryCandle(candlesRef.current, ohlcRef.current, candle, timeframeRef.current));
-      view.current.userScrolled = false;
-      scheduleDraw();
-    }
-  }, []); // eslint-disable-line
+  // ── Load demo data ──
+  const loadData = useCallback((sym, tf) => {
+    const { ohlc, candles } = genDemo(BASES[sym] || 5800, 600, tf);
+    candlesRef.current = candles;
+    ohlcRef.current = ohlc;
+    view.current.userScrolled = false;
+    setDataMode("demo");
+    scheduleDraw();
+  }, [scheduleDraw]);
 
-  // ── WebSocket (always live, NO timeframe dep) ──
+  useEffect(() => { loadData(ticker, timeframe); }, [ticker, loadData]); // eslint-disable-line
+
+  // ── WebSocket (NO timeframe dep — uses timeframeRef) ──
   useEffect(() => {
     let ws, timer;
     function connect() {
       ws = new WebSocket(WS_URL);
-      ws.onopen = () => { setStatus("connected"); };
+      ws.onopen = () => {
+        setStatus("connected");
+        setDataMode("live");
+      };
       ws.onerror = () => setStatus("error");
-      ws.onclose = () => { setStatus("disconnected"); timer = setTimeout(connect, 3000); };
+      ws.onclose = () => { setStatus("disconnected"); timer = setTimeout(connect, 10000); };
       ws.onmessage = e => {
         try {
           const d = JSON.parse(e.data);
           const tf = timeframeRef.current;
 
           if (d.type === "history") {
+            // Store 1m history and aggregate to current TF
             historyRef.current = d.candles || [];
             candlesRef.current = {};
             ohlcRef.current = {};
@@ -1035,18 +998,10 @@ export default function DataLayer() {
           }
 
           if (d.type === "trade") {
-            // Track latency
-            const msgTs = new Date(d.timestamp).getTime();
-            const now = Date.now();
-            const lat = now - msgTs;
-            if (lat >= 0 && lat < 10000) {
-              lastMsgTimeRef.current = lat;
-              if (now % 5 < 2) setLatency(lat); // throttle state updates
-            }
-
             rawTradesRef.current.push(d);
             if (rawTradesRef.current.length > 50000) rawTradesRef.current = rawTradesRef.current.slice(-40000);
             bucketTrade(candlesRef.current, ohlcRef.current, d, tf);
+            // Re-engage auto-follow after 5s idle
             const vw = view.current;
             if (vw.userScrolled && vw.lastInteraction && Date.now() - vw.lastInteraction > 5000) {
               vw.userScrolled = false;
@@ -1087,92 +1042,24 @@ export default function DataLayer() {
     return () => { clearTimeout(timer); if (ws) ws.close(); };
   }, [scheduleDraw]);
 
-  // ── Client-side MBO simulation (generates data for overlay visualizations) ──
+  // ── Timeframe change — re-bucket without WS reconnect ──
   useEffect(() => {
-    const iv = setInterval(() => {
-      const olc = ohlcRef.current;
-      const bks = Object.keys(olc).sort();
-      if (bks.length === 0) return;
-      const last = olc[bks[bks.length - 1]];
-      if (!last) return;
-      const p = last.close;
-
-      // Simulated order book
-      const bids = [], asks = [];
-      for (let i = 0; i < 10; i++) {
-        bids.push({
-          price: parseFloat((p - (i + 1) * TICK).toFixed(2)),
-          size: Math.round(50 + Math.random() * 200),
-          orderCount: Math.round(3 + Math.random() * 15),
-        });
-        asks.push({
-          price: parseFloat((p + (i + 1) * TICK).toFixed(2)),
-          size: Math.round(50 + Math.random() * 200),
-          orderCount: Math.round(3 + Math.random() * 15),
-        });
-      }
-      // Always update MBO data (relay overrides via WS messages when connected)
-      bookRef.current = { bids, asks };
-
-      // Simulated order events
-      const actions = ["add", "add", "modify", "cancel", "fill"];
-      const action = actions[Math.floor(Math.random() * actions.length)];
-      const side = Math.random() > 0.5 ? "bid" : "ask";
-      const offset = Math.ceil(Math.random() * 5) * TICK;
-      orderEventsRef.current.push({
-        action, orderId: Date.now(),
-        price: parseFloat((side === "bid" ? p - offset : p + offset).toFixed(2)),
-        size: Math.ceil(Math.random() * 20), side,
-        timestamp: new Date().toISOString(),
-      });
-      if (orderEventsRef.current.length > 500) orderEventsRef.current = orderEventsRef.current.slice(-400);
-
-      // Simulated iceberg alerts
-      if (Math.random() < 0.05) {
-        icebergAlertsRef.current.push({
-          price: parseFloat((p + (Math.random() > 0.5 ? 1 : -1) * TICK * Math.ceil(Math.random() * 3)).toFixed(2)),
-          side: Math.random() > 0.5 ? "bid" : "ask",
-          visibleSize: Math.round(10 + Math.random() * 30),
-          estimatedHiddenSize: Math.round(100 + Math.random() * 500),
-          fillCount: Math.round(5 + Math.random() * 20),
-          timestamp: new Date().toISOString(),
-        });
-        if (icebergAlertsRef.current.length > 50) icebergAlertsRef.current = icebergAlertsRef.current.slice(-40);
-      }
-
-      // Simulated pull rates
-      for (let i = -5; i <= 5; i++) {
-        if (i === 0) continue;
-        const pp = parseFloat((p + i * TICK).toFixed(2));
-        const addCount = Math.round(20 + Math.random() * 80);
-        const pullCount = Math.round(addCount * (0.2 + Math.random() * 0.6));
-        pullRateRef.current[`${pp}_${i < 0 ? "bid" : "ask"}`] = {
-          price: pp, side: i < 0 ? "bid" : "ask", addCount, pullCount,
-          pullRate: parseFloat((pullCount / addCount).toFixed(2)),
-        };
-      }
-
-      scheduleDraw();
-    }, 300);
-    return () => clearInterval(iv);
-  }, [scheduleDraw]);
-
-  // ── Timeframe change — re-bucket ──
-  useEffect(() => {
-    if (historyRef.current.length > 0 || rawTradesRef.current.length > 0) {
+    if (dataMode === "live") {
       candlesRef.current = {};
       ohlcRef.current = {};
       historyRef.current.forEach(c => processHistoryCandle(candlesRef.current, ohlcRef.current, c, timeframe));
       rawTradesRef.current.forEach(d => bucketTrade(candlesRef.current, ohlcRef.current, d, timeframe));
       view.current.userScrolled = false;
       scheduleDraw();
+    } else {
+      loadData(ticker, timeframe);
     }
   }, [timeframe]); // eslint-disable-line
 
-  // ── Countdown + EST clock ──
+  // ── Countdown ──
   useEffect(() => {
     const mins = tfMinutes(timeframe);
-    const tick = () => {
+    const interval = setInterval(() => {
       const now = new Date();
       const totalMsInDay = now.getHours() * 3600000 + now.getMinutes() * 60000 + now.getSeconds() * 1000 + now.getMilliseconds();
       const candleMs = mins * 60000;
@@ -1188,10 +1075,7 @@ export default function DataLayer() {
         const s = totalSec % 60;
         setCountdown(`${m}:${s.toString().padStart(2, "0")}`);
       }
-      setEstTime(now.toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }));
-    };
-    tick();
-    const interval = setInterval(tick, 250);
+    }, 250);
     return () => clearInterval(interval);
   }, [timeframe]);
 
@@ -1223,7 +1107,7 @@ export default function DataLayer() {
       {/* ── Toolbar ── */}
       <div style={{
         borderBottom: "1px solid #151520", background: "#0a0a10", padding: "6px 14px",
-        display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "nowrap", overflow: "visible", position: "relative", zIndex: 50,
+        display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "nowrap", overflow: "hidden",
       }}>
         {/* Ticker info */}
         <span style={{ fontWeight: 700, fontSize: 13, fontFamily: "sans-serif", color: "#c0c0d8" }}>{label}</span>
@@ -1295,91 +1179,45 @@ export default function DataLayer() {
               background: "#10101a", border: "1px solid #252538", borderRadius: 6,
               padding: "4px 0", minWidth: 210, boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
             }}>
-              {OVERLAY_DEFS.map(d => {
-                const locked = !limits.footprint;
-                return (
-                  <button
-                    key={d.key}
-                    onClick={() => {
-                      if (locked) { setShowUpgradeHint(true); setTimeout(() => setShowUpgradeHint(false), 4000); }
-                      else setOverlays(prev => ({ ...prev, [d.key]: !prev[d.key] }));
-                    }}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 8, width: "100%",
-                      padding: "7px 12px", background: "none", border: "none",
-                      color: locked ? "#2a2a38" : overlays[d.key] ? "#c0c0d8" : "#404058",
-                      fontSize: 11, fontFamily: "sans-serif", cursor: "pointer", textAlign: "left",
-                      opacity: locked ? 0.5 : 1,
-                    }}
-                  >
-                    {locked
-                      ? <Lock size={12} style={{ color: "#303040" }} />
-                      : overlays[d.key]
-                        ? <Eye size={12} style={{ color: "#22c55e" }} />
-                        : <EyeOff size={12} style={{ color: "#303040" }} />}
-                    {d.label}
-                    {locked && <span style={{ fontSize: 9, color: "#3b82f6", marginLeft: "auto" }}>PRO</span>}
-                  </button>
-                );
-              })}
-              {/* Upgrade hint inside dropdown */}
-              {showUpgradeHint && !limits.footprint && (
-                <div style={{
-                  margin: "4px 8px 6px", padding: "8px 10px", borderRadius: 6,
-                  background: "#0d1525", border: "1px solid #1a3060",
-                  fontSize: 11, fontFamily: "sans-serif", lineHeight: 1.5,
-                }}>
-                  <div style={{ color: "#93b4e8", fontWeight: 600, marginBottom: 4 }}>
-                    <Lock size={10} style={{ display: "inline", verticalAlign: "-1px", marginRight: 4 }} />
-                    Upgrade to unlock MBO overlays
-                  </div>
-                  <div style={{ color: "#506080", fontSize: 10 }}>
-                    Level 3 order flow requires Trader or Pro plan.
-                  </div>
-                  <button
-                    onClick={() => navigate("/Pricing")}
-                    style={{
-                      marginTop: 6, background: "#3b82f6", color: "#fff", border: "none",
-                      borderRadius: 4, padding: "4px 12px", fontSize: 10, fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    View Plans
-                  </button>
-                </div>
-              )}
+              {OVERLAY_DEFS.map(d => (
+                <button
+                  key={d.key}
+                  onClick={() => setOverlays(prev => ({ ...prev, [d.key]: !prev[d.key] }))}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8, width: "100%",
+                    padding: "7px 12px", background: "none", border: "none",
+                    color: overlays[d.key] ? "#c0c0d8" : "#404058",
+                    fontSize: 11, fontFamily: "sans-serif", cursor: "pointer", textAlign: "left",
+                  }}
+                >
+                  {overlays[d.key]
+                    ? <Eye size={12} style={{ color: "#22c55e" }} />
+                    : <EyeOff size={12} style={{ color: "#303040" }} />}
+                  {d.label}
+                </button>
+              ))}
             </div>
           )}
         </div>
 
+        <button onClick={() => loadData(ticker, timeframe)}
+          style={{ background: "none", border: "none", color: "#303048", cursor: "pointer", padding: "2px 4px", display: "flex", alignItems: "center" }}>
+          <RefreshCw size={12} />
+        </button>
+
         {/* Right side: status */}
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontFamily: "sans-serif" }}>
-          {estTime && (
-            <span style={{
-              fontSize: 9, fontFamily: "monospace", fontWeight: 600,
-              color: "#8888aa",
-              background: "#0c0c14", border: "1px solid #1a1a2c", borderRadius: 3,
-              padding: "1px 6px",
-            }}>
-              {estTime} EST
-            </span>
-          )}
-          {latency !== null && status === "connected" && (
-            <span style={{
-              fontSize: 9, fontFamily: "monospace", fontWeight: 600,
-              color: latency < 50 ? "#22c55e" : latency < 150 ? "#f59e0b" : "#ef4444",
-              background: "#0c0c14", border: "1px solid #1a1a2c", borderRadius: 3,
-              padding: "1px 6px",
-            }}>
-              {latency}ms
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, fontFamily: "sans-serif" }}>
+          {dataMode === "demo" && (
+            <span style={{ color: "#f59e0b", fontSize: 9, padding: "1px 6px", border: "1px solid #453000", borderRadius: 3, background: "#1a1500" }}>
+              DEMO
             </span>
           )}
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             {status === "connected"
               ? <Wifi size={11} style={{ color: "#22c55e" }} />
-              : <WifiOff size={11} style={{ color: "#505060" }} />}
-            <span style={{ color: status === "connected" ? "#22c55e" : "#505060", fontSize: 10 }}>
-              {status === "connected" ? "MBO Live" : status === "disconnected" ? "Connecting…" : "Reconnecting…"}
+              : <WifiOff size={11} style={{ color: "#282838" }} />}
+            <span style={{ color: status === "connected" ? "#22c55e" : "#282838", fontSize: 10 }}>
+              {status === "connected" ? "MBO Live" : "offline"}
             </span>
           </div>
         </div>
@@ -1404,7 +1242,6 @@ export default function DataLayer() {
             <ChevronsRight size={14} />
           </button>
         )}
-
       </div>
     </div>
   );
