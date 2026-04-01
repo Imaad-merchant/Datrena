@@ -1,365 +1,297 @@
 import React, { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
 import MainNav from "../components/navigation/MainNav";
-import { Plus, Maximize2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Plus, DollarSign, Target, TrendingUp, TrendingDown,
+  Calendar, BarChart2, Activity, Clock, X, Check,
+} from "lucide-react";
 
-const PROP_FIRMS = [
-  "TopStep", "Tradovate", "Apex", "Alpha Futures", "FTMO", 
-  "Earn2Trade", "The5ers", "Bulenox", "My Forex Funds"
+/* ── Demo data ────────────────────────────────────────────────────────── */
+const DEMO_STATS = {
+  totalTrades: 142, wins: 98, losses: 44,
+  netPnl: 8420.50, avgWin: 215.30, avgLoss: -128.60,
+  winRate: 69, profitFactor: 2.18, largestWin: 1240.00, largestLoss: -580.00,
+  avgDuration: "14m", bestDay: 1860.00, worstDay: -720.00,
+};
+
+const DEMO_CALENDAR = (() => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDay = (new Date(year, month, 1).getDay() + 6) % 7; // Mon=0
+  const weeks = [];
+  let week = new Array(firstDay).fill(null);
+  for (let d = 1; d <= daysInMonth; d++) {
+    const isWeekend = new Date(year, month, d).getDay() % 6 === 0;
+    const val = isWeekend ? 0 : (Math.random() - 0.35) * 600;
+    week.push({ day: d, value: Math.round(val), trades: isWeekend ? 0 : Math.floor(Math.random() * 8) + 1 });
+    if (week.length === 7) { weeks.push(week); week = []; }
+  }
+  if (week.length > 0) { while (week.length < 7) week.push(null); weeks.push(week); }
+  return weeks;
+})();
+
+const PROP_FIRMS = ["TopStep", "Tradovate", "Apex", "Alpha Futures", "FTMO", "Earn2Trade", "The5ers", "Bulenox"];
+
+const CONNECTIONS = [
+  { firm: "TopStep", account: "TS-882441", status: "connected", lastSync: "2 min ago" },
 ];
 
 export default function InsightLayer() {
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedFirm, setSelectedFirm] = useState("");
+  const [connections, setConnections] = useState(CONNECTIONS);
+  const [showDialog, setShowDialog] = useState(false);
+  const [firm, setFirm] = useState("");
   const [accountId, setAccountId] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const queryClient = useQueryClient();
-
-  const { data: connections = [] } = useQuery({
-    queryKey: ['propConnections'],
-    queryFn: () => base44.entities.PropFirmConnection.list()
-  });
-
-  const { data: trades = [] } = useQuery({
-    queryKey: ['trades'],
-    queryFn: () => base44.entities.Trade.list()
-  });
-
-  const createConnection = useMutation({
-    mutationFn: (data) => base44.entities.PropFirmConnection.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries(['propConnections']);
-      setDialogOpen(false);
-      setSelectedFirm("");
-      setAccountId("");
-      setApiKey("");
-    }
-  });
 
   const handleConnect = () => {
-    if (!selectedFirm || !accountId || !apiKey) return;
-    createConnection.mutate({
-      firm_name: selectedFirm,
-      account_id: accountId,
-      api_key: apiKey,
-      status: "connected",
-      last_sync: new Date().toISOString()
-    });
+    if (!firm || !accountId || !apiKey) return;
+    setConnections(prev => [...prev, { firm, account: accountId, status: "connected", lastSync: "just now" }]);
+    setShowDialog(false);
+    setFirm(""); setAccountId(""); setApiKey("");
   };
 
-  const winningTrades = trades.filter(t => t.pnl > 0);
-  const losingTrades = trades.filter(t => t.pnl < 0);
-  const totalTrades = trades.length;
-  const winCount = winningTrades.length;
-  const lossCount = losingTrades.length;
-
-  const totalWins = winningTrades.reduce((s, t) => s + t.pnl, 0);
-  const avgWin = winCount > 0 ? totalWins / winCount : 0;
-  const avgLoss = lossCount > 0 ? Math.abs(losingTrades.reduce((s, t) => s + t.pnl, 0) / lossCount) : 0;
-  const largestWin = winCount > 0 ? Math.max(...winningTrades.map(t => t.pnl)) : 0;
-  const largestLoss = lossCount > 0 ? Math.abs(Math.min(...losingTrades.map(t => t.pnl))) : 0;
-  const avgWinStreak = 0;
-  const avgLossStreak = 0;
-  const maxWinStreak = 0;
-  const maxLossStreak = 0;
-
-  const winPercentage = totalTrades > 0 ? (winCount / totalTrades) * 100 : 0;
-  const lossPercentage = totalTrades > 0 ? (lossCount / totalTrades) * 100 : 0;
-
-  // Get current month/year
+  const s = DEMO_STATS;
   const now = new Date();
-  const currentMonth = now.toLocaleString('default', { month: 'long', year: 'numeric' });
-  
-  // Calendar heatmap data - empty when no trades
-  const getDaysInMonth = () => {
-    const year = now.getFullYear();
-    const month = now.getMonth();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const firstDay = new Date(year, month, 1).getDay();
-    
-    const weeks = [];
-    let week = new Array(firstDay).fill(null);
-    
-    for (let day = 1; day <= daysInMonth; day++) {
-      week.push({ day, value: 0, trades: 0 });
-      if (week.length === 7) {
-        weeks.push(week);
-        week = [];
-      }
-    }
-    if (week.length > 0) {
-      while (week.length < 7) week.push(null);
-      weeks.push(week);
-    }
-    return weeks;
-  };
-  
-  const calendarData = getDaysInMonth();
+  const monthLabel = now.toLocaleString("default", { month: "long", year: "numeric" });
 
   return (
-    <div className="min-h-screen bg-black pl-16">
+    <div className="h-screen bg-[#0a0a10] pl-16 flex flex-col text-white overflow-hidden">
       <MainNav />
-      
-      <div className="flex-1">
-        <div className="border-b border-gray-800 bg-[#0f0f0f] px-6 py-3 flex items-center justify-between">
-          <h1 className="text-white text-lg font-semibold">Trades Summary</h1>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" variant="ghost" className="text-gray-400 hover:bg-gray-800">
-                <Plus className="w-4 h-4 mr-1" />
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="bg-gray-900 border-gray-800">
-              <DialogHeader>
-                <DialogTitle className="text-white">Connect Prop Firm</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 mt-4">
-                <div>
-                  <Label className="text-gray-300">Prop Firm</Label>
-                  <Select value={selectedFirm} onValueChange={setSelectedFirm}>
-                    <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
-                      <SelectValue placeholder="Select firm" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-gray-800 border-gray-700">
-                      {PROP_FIRMS.map(firm => (
-                        <SelectItem key={firm} value={firm} className="text-white">
-                          {firm}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-gray-300">Account ID</Label>
-                  <Input
-                    value={accountId}
-                    onChange={(e) => setAccountId(e.target.value)}
-                    className="bg-gray-800 border-gray-700 text-white"
-                    placeholder="Enter account ID"
-                  />
-                </div>
-                <div>
-                  <Label className="text-gray-300">API Key</Label>
-                  <Input
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    className="bg-gray-800 border-gray-700 text-white"
-                    placeholder="Enter API key"
-                    type="password"
-                  />
-                </div>
-                <Button 
-                  onClick={handleConnect}
-                  className="w-full bg-blue-600 hover:bg-blue-700"
-                  disabled={!selectedFirm || !accountId || !apiKey}
-                >
-                  Connect
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+
+      {/* Toolbar */}
+      <div className="border-b border-gray-800/60 bg-[#0a0a10] px-5 py-2.5 flex items-center gap-3 shrink-0" style={{ fontFamily: "sans-serif" }}>
+        <span className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Insight</span>
+        <span className="text-xs text-white font-semibold">Trades Summary</span>
+
+        <div className="ml-auto flex items-center gap-3">
+          {connections.map((c, i) => (
+            <div key={i} className="flex items-center gap-2 bg-gray-900/60 border border-gray-800/50 rounded-lg px-3 py-1.5 text-xs">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span className="text-gray-300 font-medium">{c.firm}</span>
+              <span className="text-gray-600">{c.account}</span>
+              <span className="text-gray-600 text-[10px]">{c.lastSync}</span>
+            </div>
+          ))}
+          <button
+            onClick={() => setShowDialog(true)}
+            className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 border border-blue-500/20 hover:border-blue-500/40 rounded-lg px-3 py-1.5 transition-colors"
+          >
+            <Plus className="w-3 h-3" /> Connect Firm
+          </button>
         </div>
+      </div>
 
-        <div className="p-6">
-          {/* Performance Section */}
-          <div className="bg-[#111111] border border-gray-800 rounded-xl p-6 mb-6">
-            <h2 className="text-white text-base font-semibold mb-6">Trade Performance</h2>
-            
-            <div className="grid grid-cols-2 gap-8">
-              {/* Gauge Chart */}
-              <div className="flex items-center justify-center">
-                <div className="relative">
-                  <svg width="280" height="160" viewBox="0 0 280 160">
-                    {/* Background arc */}
-                    <path
-                      d="M 40 140 A 100 100 0 0 1 240 140"
-                      fill="none"
-                      stroke="#1a1a1a"
-                      strokeWidth="32"
-                      strokeLinecap="round"
-                    />
-                    {/* Loss arc (red) */}
-                    <path
-                      d="M 40 140 A 100 100 0 0 1 140 40"
-                      fill="none"
-                      stroke="#dc2626"
-                      strokeWidth="32"
-                      strokeLinecap="round"
-                    />
-                    {/* Win arc (green) */}
-                    <path
-                      d="M 140 40 A 100 100 0 0 1 240 140"
-                      fill="none"
-                      stroke="#16a34a"
-                      strokeWidth="32"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/4 text-center">
-                    <div className="text-5xl font-bold text-white">{totalTrades}</div>
-                    <div className="text-sm text-gray-500">Trades</div>
-                  </div>
+      {/* Main — fits one screen */}
+      <div className="flex-1 grid grid-cols-5 gap-0 overflow-hidden">
+
+        {/* Left: Performance stats */}
+        <div className="col-span-2 border-r border-gray-800/40 flex flex-col overflow-hidden">
+          {/* Gauge + key metrics */}
+          <div className="p-5 border-b border-gray-800/40">
+            <div className="flex items-center gap-2 mb-4">
+              <Activity className="w-4 h-4 text-emerald-400" />
+              <span className="text-xs font-semibold text-white">Performance</span>
+            </div>
+
+            <div className="flex items-center gap-6">
+              {/* Win rate ring */}
+              <div className="relative shrink-0">
+                <svg width="100" height="100" viewBox="0 0 100 100">
+                  <circle cx="50" cy="50" r="40" fill="none" stroke="#1a1a2c" strokeWidth="8" />
+                  <circle cx="50" cy="50" r="40" fill="none" stroke="#22c55e" strokeWidth="8"
+                    strokeDasharray={`${s.winRate * 2.51} 251`} strokeLinecap="round"
+                    transform="rotate(-90 50 50)" />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-xl font-bold text-white">{s.winRate}%</span>
+                  <span className="text-[9px] text-gray-500">Win Rate</span>
                 </div>
               </div>
 
-              {/* Stats Grid */}
-              <div className="grid grid-cols-2 gap-4">
-                {/* Wins Column */}
-                <div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="w-2 h-2 bg-green-500 rounded-full" />
-                    <span className="text-white font-semibold">Wins</span>
-                  </div>
-                  <div className="space-y-3 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Total Wins</span>
-                      <span className="text-white font-semibold">{totalTrades > 0 ? winCount : 'N/A'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Total Win $</span>
-                      <span className="text-green-400 font-semibold">{totalTrades > 0 ? `$${totalWins.toFixed(2)}` : '$0.00'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Average Win</span>
-                      <span className="text-green-400 font-semibold">{totalTrades > 0 ? `$${avgWin.toFixed(2)}` : '$0.00'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Average Win Duration</span>
-                      <span className="text-white font-semibold">N/A</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Average Win in a row</span>
-                      <span className="text-white font-semibold">N/A</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Max Win in a row</span>
-                      <span className="text-white font-semibold">N/A</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Max Win | Equate</span>
-                      <span className="text-white font-semibold">{totalTrades > 0 ? `$${largestWin.toFixed(2)}` : 'N/A'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Losses Column */}
-                <div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="w-2 h-2 bg-red-500 rounded-full" />
-                    <span className="text-white font-semibold">Losses</span>
-                  </div>
-                  <div className="space-y-3 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Total Losses</span>
-                      <span className="text-white font-semibold">{totalTrades > 0 ? lossCount : 'N/A'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Total Loss</span>
-                      <span className="text-red-400 font-semibold">$0.00</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Average Loss</span>
-                      <span className="text-red-400 font-semibold">{totalTrades > 0 ? `$${avgLoss.toFixed(2)}` : '$0.00'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Avg loss Duration</span>
-                      <span className="text-white font-semibold">N/A</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Avg loss in a row</span>
-                      <span className="text-white font-semibold">N/A</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Max loss in a row</span>
-                      <span className="text-white font-semibold">N/A</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Max Loss | Streak</span>
-                      <span className="text-white font-semibold">{totalTrades > 0 ? `$${largestLoss.toFixed(2)}` : 'N/A'}</span>
-                    </div>
-                  </div>
-                </div>
+              {/* Key numbers */}
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs flex-1">
+                <div className="flex justify-between"><span className="text-gray-500">Net P&L</span><span className="text-emerald-400 font-semibold">+${s.netPnl.toLocaleString()}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">PF</span><span className="text-blue-400 font-semibold">{s.profitFactor}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Trades</span><span className="text-white font-semibold">{s.totalTrades}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Avg Duration</span><span className="text-white font-semibold">{s.avgDuration}</span></div>
               </div>
             </div>
           </div>
 
-          {/* Calendar Section */}
-          <div className="bg-[#111111] border border-gray-800 rounded-xl p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-4">
-                <button className="text-gray-500 hover:text-white">←</button>
-                <h3 className="text-white font-semibold">{currentMonth}</h3>
-                <button className="text-gray-500 hover:text-white">→</button>
-              </div>
-              <button className="text-gray-500 hover:text-white">
-                <Maximize2 className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Stats Cards */}
-            <div className="grid grid-cols-5 gap-4 mb-6">
-              {[
-                { label: "Total Trades", value: totalTrades > 0 ? totalTrades : "N/A" },
-                { label: "P&L", value: totalTrades > 0 ? `$${(totalWins - Math.abs(losingTrades.reduce((s, t) => s + t.pnl, 0))).toFixed(2)}` : "N/A" },
-                { label: "Win%", value: totalTrades > 0 ? `${winPercentage.toFixed(0)}%` : "N/A" },
-                { label: "Total Sales", value: "N/A" },
-                { label: "Losing Days", value: totalTrades > 0 ? lossCount : "N/A" },
-                { label: "Winning Days", value: totalTrades > 0 ? winCount : "N/A" }
-              ].map((stat, i) => (
-                <div key={i} className="bg-[#1a1a1a] border border-gray-800 rounded-lg p-4">
-                  <div className="text-xs text-gray-500 mb-1 flex items-center gap-1">
-                    {stat.label}
-                    <Maximize2 className="w-3 h-3" />
-                  </div>
-                  <div className="text-2xl font-bold text-white">{stat.value}</div>
+          {/* Detailed stats */}
+          <div className="p-5 flex-1 overflow-y-auto">
+            <div className="grid grid-cols-2 gap-6">
+              {/* Wins */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full" />
+                  <span className="text-xs font-semibold text-white">Wins ({s.wins})</span>
                 </div>
-              ))}
-            </div>
-
-            {/* Day Labels */}
-            <div className="grid grid-cols-7 gap-2 mb-2">
-              {["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"].map((day, i) => (
-                <div key={i} className="text-center text-xs text-gray-500">{day}</div>
-              ))}
-            </div>
-
-            {/* Calendar Grid */}
-            <div className="space-y-2">
-              {calendarData.map((week, weekIdx) => (
-                <div key={weekIdx} className="grid grid-cols-7 gap-2">
-                  {week.map((day, dayIdx) => (
-                    <div
-                      key={dayIdx}
-                      className={`aspect-square rounded-lg flex flex-col items-center justify-center text-xs ${
-                        day === null
-                          ? "bg-transparent"
-                          : day.value > 0
-                          ? "bg-green-600 text-white"
-                          : day.value < 0
-                          ? "bg-red-600 text-white"
-                          : "bg-[#1a1a1a] text-gray-600"
-                      }`}
-                    >
-                      {day && day.value !== 0 && (
-                        <>
-                          <div className="font-bold">${Math.abs(day.value).toFixed(0)}</div>
-                          <div className="text-[10px]">{day.trades} trades</div>
-                        </>
-                      )}
+                <div className="space-y-2.5 text-xs">
+                  {[
+                    ["Avg Win", `+$${s.avgWin.toFixed(2)}`, "text-emerald-400"],
+                    ["Largest Win", `+$${s.largestWin.toFixed(2)}`, "text-emerald-400"],
+                    ["Best Day", `+$${s.bestDay.toFixed(2)}`, "text-emerald-400"],
+                    ["Win Streak", "6", "text-white"],
+                  ].map(([label, val, color]) => (
+                    <div key={label} className="flex justify-between">
+                      <span className="text-gray-500">{label}</span>
+                      <span className={`font-semibold ${color}`}>{val}</span>
                     </div>
                   ))}
                 </div>
-              ))}
+              </div>
+              {/* Losses */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-2 h-2 bg-red-500 rounded-full" />
+                  <span className="text-xs font-semibold text-white">Losses ({s.losses})</span>
+                </div>
+                <div className="space-y-2.5 text-xs">
+                  {[
+                    ["Avg Loss", `$${Math.abs(s.avgLoss).toFixed(2)}`, "text-red-400"],
+                    ["Largest Loss", `$${Math.abs(s.largestLoss).toFixed(2)}`, "text-red-400"],
+                    ["Worst Day", `$${Math.abs(s.worstDay).toFixed(2)}`, "text-red-400"],
+                    ["Loss Streak", "3", "text-white"],
+                  ].map(([label, val, color]) => (
+                    <div key={label} className="flex justify-between">
+                      <span className="text-gray-500">{label}</span>
+                      <span className={`font-semibold ${color}`}>{val}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Right: Calendar heatmap */}
+        <div className="col-span-3 p-5 flex flex-col overflow-hidden">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-amber-400" />
+              <span className="text-xs font-semibold text-white">{monthLabel}</span>
+            </div>
+            <div className="flex items-center gap-4 text-[10px] text-gray-600">
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-600 inline-block" /> Profit</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-red-600 inline-block" /> Loss</span>
+            </div>
+          </div>
+
+          {/* Summary cards */}
+          <div className="grid grid-cols-5 gap-2.5 mb-4">
+            {[
+              { label: "Total Trades", value: s.totalTrades, icon: BarChart2, color: "#9ca3af" },
+              { label: "Net P&L", value: `+$${s.netPnl.toLocaleString()}`, icon: DollarSign, color: "#22c55e" },
+              { label: "Win %", value: `${s.winRate}%`, icon: Target, color: "#22c55e" },
+              { label: "Best Day", value: `+$${s.bestDay.toFixed(0)}`, icon: TrendingUp, color: "#22c55e" },
+              { label: "Worst Day", value: `-$${Math.abs(s.worstDay).toFixed(0)}`, icon: TrendingDown, color: "#ef4444" },
+            ].map(c => {
+              const Icon = c.icon;
+              return (
+                <div key={c.label} className="bg-gray-900/40 border border-gray-800/30 rounded-lg px-3 py-2.5">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Icon className="w-3 h-3" style={{ color: c.color }} />
+                    <span className="text-[10px] text-gray-500">{c.label}</span>
+                  </div>
+                  <div className="text-sm font-bold" style={{ color: c.color }}>{c.value}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Day headers */}
+          <div className="grid grid-cols-7 gap-2 mb-1.5">
+            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(d => (
+              <div key={d} className="text-center text-[10px] text-gray-600 font-medium">{d}</div>
+            ))}
+          </div>
+
+          {/* Calendar grid */}
+          <div className="flex-1 flex flex-col gap-2">
+            {DEMO_CALENDAR.map((week, wi) => (
+              <div key={wi} className="grid grid-cols-7 gap-2 flex-1">
+                {week.map((day, di) => (
+                  <div
+                    key={di}
+                    className={`rounded-lg flex flex-col items-center justify-center text-xs transition-colors ${
+                      day === null ? "" :
+                      day.value > 200 ? "bg-emerald-600/80 text-white" :
+                      day.value > 0 ? "bg-emerald-600/40 text-emerald-200" :
+                      day.value < -200 ? "bg-red-600/80 text-white" :
+                      day.value < 0 ? "bg-red-600/40 text-red-200" :
+                      "bg-gray-900/40 text-gray-700"
+                    }`}
+                  >
+                    {day && (
+                      <>
+                        <span className="text-[10px] opacity-60">{day.day}</span>
+                        {day.value !== 0 && (
+                          <span className="font-bold text-[11px]">
+                            {day.value > 0 ? "+" : ""}${Math.abs(day.value)}
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
+
+      {/* Connect Prop Firm Dialog */}
+      {showDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowDialog(false)}>
+          <div className="bg-[#111118] border border-gray-800 rounded-xl w-full max-w-md p-6" onClick={e => e.stopPropagation()} style={{ fontFamily: "sans-serif" }}>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-white font-semibold text-base">Connect Prop Firm</h3>
+              <button onClick={() => setShowDialog(false)} className="text-gray-500 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1.5">Prop Firm</label>
+                <select
+                  value={firm}
+                  onChange={e => setFirm(e.target.value)}
+                  className="w-full bg-gray-900/60 border border-gray-800/50 text-white text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:border-gray-600"
+                >
+                  <option value="">Select firm...</option>
+                  {PROP_FIRMS.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1.5">Account ID</label>
+                <input
+                  type="text" value={accountId} onChange={e => setAccountId(e.target.value)}
+                  placeholder="Enter account ID"
+                  className="w-full bg-gray-900/60 border border-gray-800/50 text-white text-sm rounded-lg px-3 py-2.5 placeholder-gray-600 focus:outline-none focus:border-gray-600"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1.5">API Key</label>
+                <input
+                  type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
+                  placeholder="Enter API key"
+                  className="w-full bg-gray-900/60 border border-gray-800/50 text-white text-sm rounded-lg px-3 py-2.5 placeholder-gray-600 focus:outline-none focus:border-gray-600"
+                />
+              </div>
+              <button
+                onClick={handleConnect}
+                disabled={!firm || !accountId || !apiKey}
+                className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                <Check className="w-4 h-4" /> Connect
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
