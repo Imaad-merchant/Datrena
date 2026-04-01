@@ -1,5 +1,6 @@
 import React from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { base44 } from "@/api/base44Client";
 import {
   Database, TrendingUp, Lightbulb, CheckCircle, ArrowRight,
   BarChart3, Activity, LineChart, PieChart, Calendar, Target,
@@ -117,7 +118,6 @@ const FUTURE_SECTIONS = [
 ];
 
 export default function Features() {
-  const navigate = useNavigate();
   return (
     <div className="bg-black min-h-screen text-white">
       <LandingNav activePage="/Features" />
@@ -248,7 +248,7 @@ export default function Features() {
           <h2 className="text-2xl font-bold text-white mb-3">Start trading with better data</h2>
           <p className="text-gray-400 text-sm mb-6">Free tier available. No credit card required.</p>
           <button
-            onClick={() => navigate("/Pricing")}
+            onClick={() => base44.auth.redirectToLogin("/QuantHome")}
             className="bg-white text-black font-semibold px-8 py-3 rounded-lg hover:bg-gray-200 transition-colors text-sm inline-flex items-center gap-2"
           >
             Get Started Free <ArrowRight className="w-4 h-4" />

@@ -1,5 +1,6 @@
 import React from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { base44 } from "@/api/base44Client";
 import {
   Database, TrendingUp, Lightbulb, CheckCircle, ArrowRight,
   Wifi, ChevronRight,
@@ -47,8 +48,9 @@ const STATS = [
 ];
 
 export default function Landing() {
-  const navigate = useNavigate();
-  const handleSignIn = () => navigate("/Pricing");
+  const handleSignIn = () => {
+    base44.auth.redirectToLogin("/QuantHome");
+  };
 
   return (
     <div className="min-h-screen bg-black flex flex-col text-white">

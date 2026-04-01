@@ -161,6 +161,7 @@ const OVERLAY_DEFS = [
 export default function DataLayer() {
   const { plan, limits } = usePlan();
   const navigate = useNavigate();
+  const [showUpgradeHint, setShowUpgradeHint] = useState(false);
   const [status,    setStatus]    = useState("disconnected");
   const [ticker,    setTicker]    = useState("ES=F");
   const [timeframe, setTimeframe] = useState("5m");
@@ -1299,7 +1300,10 @@ export default function DataLayer() {
                 return (
                   <button
                     key={d.key}
-                    onClick={() => locked ? navigate("/Pricing") : setOverlays(prev => ({ ...prev, [d.key]: !prev[d.key] }))}
+                    onClick={() => {
+                      if (locked) { setShowUpgradeHint(true); setTimeout(() => setShowUpgradeHint(false), 4000); }
+                      else setOverlays(prev => ({ ...prev, [d.key]: !prev[d.key] }));
+                    }}
                     style={{
                       display: "flex", alignItems: "center", gap: 8, width: "100%",
                       padding: "7px 12px", background: "none", border: "none",
@@ -1318,6 +1322,32 @@ export default function DataLayer() {
                   </button>
                 );
               })}
+              {/* Upgrade hint inside dropdown */}
+              {showUpgradeHint && !limits.footprint && (
+                <div style={{
+                  margin: "4px 8px 6px", padding: "8px 10px", borderRadius: 6,
+                  background: "#0d1525", border: "1px solid #1a3060",
+                  fontSize: 11, fontFamily: "sans-serif", lineHeight: 1.5,
+                }}>
+                  <div style={{ color: "#93b4e8", fontWeight: 600, marginBottom: 4 }}>
+                    <Lock size={10} style={{ display: "inline", verticalAlign: "-1px", marginRight: 4 }} />
+                    Upgrade to unlock MBO overlays
+                  </div>
+                  <div style={{ color: "#506080", fontSize: 10 }}>
+                    Level 3 order flow requires Trader or Pro plan.
+                  </div>
+                  <button
+                    onClick={() => navigate("/Pricing")}
+                    style={{
+                      marginTop: 6, background: "#3b82f6", color: "#fff", border: "none",
+                      borderRadius: 4, padding: "4px 12px", fontSize: 10, fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    View Plans
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1375,40 +1405,6 @@ export default function DataLayer() {
           </button>
         )}
 
-        {/* Free plan upgrade overlay */}
-        {!limits.footprint && (
-          <div style={{
-            position: "absolute", inset: 0, zIndex: 20,
-            background: "linear-gradient(180deg, rgba(10,10,16,0.4) 0%, rgba(10,10,16,0.85) 60%, rgba(10,10,16,0.95) 100%)",
-            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-            fontFamily: "sans-serif",
-          }}>
-            <div style={{
-              background: "#0c0c18", border: "1px solid #1a1a2c", borderRadius: 12,
-              padding: "32px 40px", textAlign: "center", maxWidth: 420,
-            }}>
-              <Lock size={28} style={{ color: "#3b82f6", marginBottom: 16 }} />
-              <h3 style={{ color: "#e0e0f0", fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
-                Upgrade to Unlock Footprint Charts
-              </h3>
-              <p style={{ color: "#606078", fontSize: 13, lineHeight: 1.6, marginBottom: 8 }}>
-                Your free plan includes Level 2 candlestick data, prop firm tracking, and algorithmic backtesting.
-              </p>
-              <p style={{ color: "#606078", fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
-                Upgrade to <span style={{ color: "#3b82f6", fontWeight: 600 }}>Trader</span> or <span style={{ color: "#f59e0b", fontWeight: 600 }}>Pro</span> to access Level 3 MBO footprint charts, delta/volume overlays, and all order flow tools.
-              </p>
-              <button
-                onClick={() => navigate("/Pricing")}
-                style={{
-                  background: "#fff", color: "#000", fontWeight: 700, fontSize: 13,
-                  padding: "10px 28px", borderRadius: 8, border: "none", cursor: "pointer",
-                }}
-              >
-                View Plans
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
