@@ -75,7 +75,7 @@ const DATA_FEATURES = [
   },
 ];
 
-/* ── Other layers (coming soon) ──────────────────────────────────────── */
+/* ── Other layers ─────────────────────────────────────────────────────── */
 const FUTURE_SECTIONS = [
   {
     id: "analysis-layer",
@@ -197,7 +197,6 @@ export default function Features() {
                   <Icon className="w-4 h-4" style={{ color: section.color }} />
                 </div>
                 <h2 className="text-xl font-bold text-white">{section.title}</h2>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-800 text-gray-500">Coming Soon</span>
               </div>
               <p className="text-gray-400 text-sm mb-8 max-w-2xl leading-relaxed">{section.description}</p>
 

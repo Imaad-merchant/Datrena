@@ -118,7 +118,6 @@ export default function TradersSection({ onSignIn }) {
           {TABS.map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.key;
-            const isReady = TAB_CONTENT[tab.key].ready;
             return (
               <button
                 key={tab.key}
@@ -131,9 +130,6 @@ export default function TradersSection({ onSignIn }) {
               >
                 <Icon className="w-3.5 h-3.5" style={isActive ? { color: tab.color } : {}} />
                 {tab.label}
-                {isReady && (
-                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 ml-1">LIVE</span>
-                )}
               </button>
             );
           })}
