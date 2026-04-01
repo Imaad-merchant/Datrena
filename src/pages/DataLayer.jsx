@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Wifi, WifiOff, ChevronsRight, ChevronDown, Layers, Eye, EyeOff } from "lucide-react";
+import { Wifi, WifiOff, ChevronsRight, ChevronDown, Layers, Eye, EyeOff, Lock } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import MainNav from "../components/navigation/MainNav";
+import { usePlan } from "@/lib/PlanContext";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const WS_URL = "ws://localhost:8080";
@@ -157,6 +159,8 @@ const OVERLAY_DEFS = [
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function DataLayer() {
+  const { plan, limits } = usePlan();
+  const navigate = useNavigate();
   const [status,    setStatus]    = useState("disconnected");
   const [ticker,    setTicker]    = useState("ES=F");
   const [timeframe, setTimeframe] = useState("5m");
@@ -1290,23 +1294,30 @@ export default function DataLayer() {
               background: "#10101a", border: "1px solid #252538", borderRadius: 6,
               padding: "4px 0", minWidth: 210, boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
             }}>
-              {OVERLAY_DEFS.map(d => (
-                <button
-                  key={d.key}
-                  onClick={() => setOverlays(prev => ({ ...prev, [d.key]: !prev[d.key] }))}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 8, width: "100%",
-                    padding: "7px 12px", background: "none", border: "none",
-                    color: overlays[d.key] ? "#c0c0d8" : "#404058",
-                    fontSize: 11, fontFamily: "sans-serif", cursor: "pointer", textAlign: "left",
-                  }}
-                >
-                  {overlays[d.key]
-                    ? <Eye size={12} style={{ color: "#22c55e" }} />
-                    : <EyeOff size={12} style={{ color: "#303040" }} />}
-                  {d.label}
-                </button>
-              ))}
+              {OVERLAY_DEFS.map(d => {
+                const locked = !limits.footprint;
+                return (
+                  <button
+                    key={d.key}
+                    onClick={() => locked ? navigate("/Pricing") : setOverlays(prev => ({ ...prev, [d.key]: !prev[d.key] }))}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8, width: "100%",
+                      padding: "7px 12px", background: "none", border: "none",
+                      color: locked ? "#2a2a38" : overlays[d.key] ? "#c0c0d8" : "#404058",
+                      fontSize: 11, fontFamily: "sans-serif", cursor: "pointer", textAlign: "left",
+                      opacity: locked ? 0.5 : 1,
+                    }}
+                  >
+                    {locked
+                      ? <Lock size={12} style={{ color: "#303040" }} />
+                      : overlays[d.key]
+                        ? <Eye size={12} style={{ color: "#22c55e" }} />
+                        : <EyeOff size={12} style={{ color: "#303040" }} />}
+                    {d.label}
+                    {locked && <span style={{ fontSize: 9, color: "#3b82f6", marginLeft: "auto" }}>PRO</span>}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -1362,6 +1373,41 @@ export default function DataLayer() {
           >
             <ChevronsRight size={14} />
           </button>
+        )}
+
+        {/* Free plan upgrade overlay */}
+        {!limits.footprint && (
+          <div style={{
+            position: "absolute", inset: 0, zIndex: 20,
+            background: "linear-gradient(180deg, rgba(10,10,16,0.4) 0%, rgba(10,10,16,0.85) 60%, rgba(10,10,16,0.95) 100%)",
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            fontFamily: "sans-serif",
+          }}>
+            <div style={{
+              background: "#0c0c18", border: "1px solid #1a1a2c", borderRadius: 12,
+              padding: "32px 40px", textAlign: "center", maxWidth: 420,
+            }}>
+              <Lock size={28} style={{ color: "#3b82f6", marginBottom: 16 }} />
+              <h3 style={{ color: "#e0e0f0", fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
+                Upgrade to Unlock Footprint Charts
+              </h3>
+              <p style={{ color: "#606078", fontSize: 13, lineHeight: 1.6, marginBottom: 8 }}>
+                Your free plan includes Level 2 candlestick data, prop firm tracking, and algorithmic backtesting.
+              </p>
+              <p style={{ color: "#606078", fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>
+                Upgrade to <span style={{ color: "#3b82f6", fontWeight: 600 }}>Trader</span> or <span style={{ color: "#f59e0b", fontWeight: 600 }}>Pro</span> to access Level 3 MBO footprint charts, delta/volume overlays, and all order flow tools.
+              </p>
+              <button
+                onClick={() => navigate("/Pricing")}
+                style={{
+                  background: "#fff", color: "#000", fontWeight: 700, fontSize: 13,
+                  padding: "10px 28px", borderRadius: 8, border: "none", cursor: "pointer",
+                }}
+              >
+                View Plans
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>
