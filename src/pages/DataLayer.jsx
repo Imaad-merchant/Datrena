@@ -1104,6 +1104,16 @@ export default function DataLayer() {
     <div style={{ height: "100vh", background: "#0a0a10", display: "flex", flexDirection: "column", fontFamily: "monospace", paddingLeft: "4rem" }}>
       <MainNav />
 
+      {/* ── Live data notice ── */}
+      <div style={{
+        background: "#1a1400", borderBottom: "1px solid #33290a", padding: "6px 14px",
+        display: "flex", alignItems: "center", gap: 8, fontFamily: "sans-serif", fontSize: 11,
+        color: "#f59e0b", shrink: 0,
+      }}>
+        <span style={{ fontWeight: 700 }}>⚠</span>
+        <span>Datrena is currently fixing its live data connection. Chart data shown is simulated.</span>
+      </div>
+
       {/* ── Toolbar ── */}
       <div style={{
         borderBottom: "1px solid #151520", background: "#0a0a10", padding: "6px 14px",
