@@ -1305,59 +1305,23 @@ export default function DataLayer() {
               background: "#10101a", border: "1px solid #252538", borderRadius: 6,
               padding: "4px 0", minWidth: 210, boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
             }}>
-              {OVERLAY_DEFS.map(d => {
-                const locked = !limits.footprint;
-                return (
-                  <button
-                    key={d.key}
-                    onClick={() => {
-                      if (locked) { setShowUpgradeHint(true); setTimeout(() => setShowUpgradeHint(false), 4000); }
-                      else setOverlays(prev => ({ ...prev, [d.key]: !prev[d.key] }));
-                    }}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 8, width: "100%",
-                      padding: "7px 12px", background: "none", border: "none",
-                      color: locked ? "#2a2a38" : overlays[d.key] ? "#c0c0d8" : "#404058",
-                      fontSize: 11, fontFamily: "sans-serif", cursor: "pointer", textAlign: "left",
-                      opacity: locked ? 0.5 : 1,
-                    }}
-                  >
-                    {locked
-                      ? <Lock size={12} style={{ color: "#303040" }} />
-                      : overlays[d.key]
-                        ? <Eye size={12} style={{ color: "#22c55e" }} />
-                        : <EyeOff size={12} style={{ color: "#303040" }} />}
-                    {d.label}
-                    {locked && <span style={{ fontSize: 9, color: "#3b82f6", marginLeft: "auto" }}>PRO</span>}
-                  </button>
-                );
-              })}
-              {/* Upgrade hint inside dropdown */}
-              {showUpgradeHint && !limits.footprint && (
-                <div style={{
-                  margin: "4px 8px 6px", padding: "8px 10px", borderRadius: 6,
-                  background: "#0d1525", border: "1px solid #1a3060",
-                  fontSize: 11, fontFamily: "sans-serif", lineHeight: 1.5,
-                }}>
-                  <div style={{ color: "#93b4e8", fontWeight: 600, marginBottom: 4 }}>
-                    <Lock size={10} style={{ display: "inline", verticalAlign: "-1px", marginRight: 4 }} />
-                    Upgrade to unlock MBO overlays
-                  </div>
-                  <div style={{ color: "#506080", fontSize: 10 }}>
-                    Level 3 order flow requires Trader or Pro plan.
-                  </div>
-                  <button
-                    onClick={() => navigate("/Pricing")}
-                    style={{
-                      marginTop: 6, background: "#3b82f6", color: "#fff", border: "none",
-                      borderRadius: 4, padding: "4px 12px", fontSize: 10, fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    View Plans
-                  </button>
-                </div>
-              )}
+              {OVERLAY_DEFS.map(d => (
+                <button
+                  key={d.key}
+                  onClick={() => setOverlays(prev => ({ ...prev, [d.key]: !prev[d.key] }))}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8, width: "100%",
+                    padding: "7px 12px", background: "none", border: "none",
+                    color: overlays[d.key] ? "#c0c0d8" : "#404058",
+                    fontSize: 11, fontFamily: "sans-serif", cursor: "pointer", textAlign: "left",
+                  }}
+                >
+                  {overlays[d.key]
+                    ? <Eye size={12} style={{ color: "#22c55e" }} />
+                    : <EyeOff size={12} style={{ color: "#303040" }} />}
+                  {d.label}
+                </button>
+              ))}
             </div>
           )}
         </div>
