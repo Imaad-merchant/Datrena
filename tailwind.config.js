@@ -1,13 +1,21 @@
+import tailwindcssAnimate from "tailwindcss-animate";
+
 /** @type {import('tailwindcss').Config} */
-module.exports = {
+export default {
     darkMode: ["class"],
     content: ["./index.html", "./src/**/*.{ts,tsx,js,jsx}"],
   theme: {
   	extend: {
+  		fontFamily: {
+  			mono: ['"JetBrains Mono"', 'monospace'],
+  			sans: ['"JetBrains Mono"', 'monospace'],
+  		},
   		borderRadius: {
-  			lg: 'var(--radius)',
-  			md: 'calc(var(--radius) - 2px)',
-  			sm: 'calc(var(--radius) - 4px)'
+  			lg: '0.125rem',
+  			md: '0.125rem',
+  			sm: '0.0625rem',
+  			xl: '0.1875rem',
+  			'2xl': '0.25rem',
   		},
   		colors: {
   			background: 'hsl(var(--background))',
@@ -59,31 +67,39 @@ module.exports = {
   				'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
   				border: 'hsl(var(--sidebar-border))',
   				ring: 'hsl(var(--sidebar-ring))'
-  			}
+  			},
+  			'dt-green': '#22C55E',
+  			'dt-red': '#EF4444',
+  			'dt-blue': '#3B82F6',
+  			'dt-purple': '#8B5CF6',
+  			'dt-amber': '#F59E0B',
+  			'dt-emerald': '#10B981',
   		},
   		keyframes: {
   			'accordion-down': {
-  				from: {
-  					height: '0'
-  				},
-  				to: {
-  					height: 'var(--radix-accordion-content-height)'
-  				}
+  				from: { height: '0' },
+  				to: { height: 'var(--radix-accordion-content-height)' }
   			},
   			'accordion-up': {
-  				from: {
-  					height: 'var(--radix-accordion-content-height)'
-  				},
-  				to: {
-  					height: '0'
-  				}
+  				from: { height: 'var(--radix-accordion-content-height)' },
+  				to: { height: '0' }
+  			},
+  			'ticker-scroll': {
+  				'0%': { transform: 'translateX(0)' },
+  				'100%': { transform: 'translateX(-50%)' }
+  			},
+  			'pulse-green': {
+  				'0%, 100%': { opacity: '1' },
+  				'50%': { opacity: '0.4' }
   			}
   		},
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
-  			'accordion-up': 'accordion-up 0.2s ease-out'
+  			'accordion-up': 'accordion-up 0.2s ease-out',
+  			'ticker-scroll': 'ticker-scroll 30s linear infinite',
+  			'pulse-green': 'pulse-green 2s ease-in-out infinite'
   		}
   	}
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [tailwindcssAnimate],
 }

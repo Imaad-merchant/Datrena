@@ -6,6 +6,7 @@ import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-d
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { PlanProvider } from '@/lib/PlanContext';
+import { useSecretAccess } from '@/hooks/useSecretAccess';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import QuantHome from './pages/QuantHome';
 import Landing from './pages/Landing';
@@ -26,17 +27,23 @@ const LayoutWrapper = ({ children, currentPageName }) => Layout ?
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, user } = useAuth();
+  const { isAdmin } = useSecretAccess();
+
+  // Treat admin as authenticated
+  const isAuthenticated = !!user || isAdmin;
 
   // Show loading spinner while checking app public settings or auth
-  if (isLoadingPublicSettings || isLoadingAuth) {
+  if (isLoadingPublicSettings || (isLoadingAuth && !isAdmin)) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
+      <div className="fixed inset-0 flex items-center justify-center bg-[#020617]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-6 h-6 border-2 border-[#334155] border-t-[#22C55E] rounded-full animate-spin"></div>
+          <span className="text-[11px] text-[#94A3B8] font-mono tracking-wider">CONNECTING...</span>
+        </div>
       </div>
     );
   }
 
-  // Everyone sees landing page and authenticated routes
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
@@ -47,9 +54,9 @@ const AuthenticatedApp = () => {
       <Route path="/GithubPRs" element={<GithubPRs />} />
       <Route path="/DataLayer" element={<DataLayer />} />
       <Route path="/Checkout" element={<Checkout />} />
-      
-      {/* Authenticated routes */}
-      {user ? (
+
+      {/* Authenticated routes — accessible via login OR Shift+Z */}
+      {isAuthenticated ? (
         <>
           <Route path="/QuantHome" element={<QuantHome />} />
           <Route path="/Pricing" element={<Pricing />} />
@@ -71,13 +78,13 @@ const AuthenticatedApp = () => {
           <Route path="*" element={<Navigate to="/" replace />} />
         </>
       )}
-      
+
       {/* Handle user not registered error */}
       {authError?.type === 'user_not_registered' && (
         <Route path="*" element={<UserNotRegisteredError />} />
       )}
-      
-      <Route path="*" element={user ? <PageNotFound /> : <Navigate to="/" replace />} />
+
+      <Route path="*" element={isAuthenticated ? <PageNotFound /> : <Navigate to="/" replace />} />
     </Routes>
   );
 };
