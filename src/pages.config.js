@@ -52,8 +52,8 @@ import Terminal from './pages/Terminal';
 import Home from './pages/Home';
 import DataLayer from './pages/DataLayer';
 import AnalysisLayer from './pages/AnalysisLayer';
-import InsightLayer from './pages/InsightLayer';
 import ValidationLayer from './pages/ValidationLayer';
+import BusinessEvaluator from './pages/BusinessEvaluator';
 import __Layout from './Layout.jsx';
 
 
@@ -63,8 +63,8 @@ export const PAGES = {
     "Home": Home,
     "DataLayer": DataLayer,
     "AnalysisLayer": AnalysisLayer,
-    "InsightLayer": InsightLayer,
     "ValidationLayer": ValidationLayer,
+    "BusinessEvaluator": BusinessEvaluator,
 }
 
 export const pagesConfig = {

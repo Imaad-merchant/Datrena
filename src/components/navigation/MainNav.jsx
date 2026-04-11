@@ -2,16 +2,16 @@ import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { useSecretAccess } from "@/hooks/useSecretAccess";
-import { Database, TrendingUp, Lightbulb, CheckCircle, LogOut } from "lucide-react";
+import { Database, Bot, BarChart3, FlaskConical, Home, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 
 const navItems = [
-  { label: "DATA", full: "Data Layer", icon: Database, color: "#3B82F6", page: "DataLayer" },
-  { label: "ANLYS", full: "Analysis Layer", icon: TrendingUp, color: "#8B5CF6", page: "AnalysisLayer" },
-  { label: "INSGT", full: "Insight Layer", icon: Lightbulb, color: "#F59E0B", page: "InsightLayer" },
-  { label: "VALID", full: "Validation Layer", icon: CheckCircle, color: "#10B981", page: "ValidationLayer" }
+  { label: "Data", icon: Database, page: "DataLayer" },
+  { label: "AI Analysis", icon: Bot, page: "AnalysisLayer" },
+  { label: "Backtesting", icon: BarChart3, page: "Backtesting" },
+  { label: "Research", icon: FlaskConical, page: "ValidationLayer" },
 ];
 
 export default function MainNav() {
@@ -22,26 +22,23 @@ export default function MainNav() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="fixed left-0 top-0 h-full w-16 border-r border-border bg-card flex flex-col items-center py-4 gap-1 z-50">
-        {/* DT Monogram */}
+      <div className="fixed left-0 top-0 h-full w-16 border-r border-gray-800 bg-gray-900/95 backdrop-blur flex flex-col items-center py-6 gap-4 z-50">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
+              size="icon"
+              className={`w-12 h-12 mb-2 ${currentPage === 'QuantHome' || location.pathname === '/' ? 'bg-gray-800' : 'hover:bg-gray-800'}`}
               onClick={() => navigate(createPageUrl("QuantHome"))}
-              className="w-10 h-10 rounded-none p-0"
             >
-              <span className="text-dt-green text-sm font-bold">DT</span>
+              <Home className="w-6 h-6 text-white" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="right" className="text-[10px] tracking-wider rounded-none">
-            WORKSPACE
-          </TooltipContent>
+          <TooltipContent side="right">Home</TooltipContent>
         </Tooltip>
 
-        <Separator className="w-8 my-1" />
+        <Separator className="w-10" />
 
-        {/* Layer Nav */}
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.page;
@@ -51,52 +48,35 @@ export default function MainNav() {
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
+                  size="icon"
+                  className={`w-12 h-12 ${isActive ? 'bg-gray-800' : 'hover:bg-gray-800'}`}
                   onClick={() => navigate(createPageUrl(item.page))}
-                  className={`relative w-full flex flex-col items-center gap-0.5 py-2.5 h-auto rounded-none ${
-                    isActive ? "bg-secondary" : ""
-                  }`}
                 >
-                  {isActive && (
-                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-6 bg-dt-green" />
-                  )}
-                  <Icon className="w-4 h-4" style={{ color: isActive ? item.color : "hsl(var(--muted-foreground))" }} />
-                  <span className="text-[8px] tracking-wider" style={{ color: isActive ? item.color : "hsl(var(--border))" }}>
-                    {item.label}
-                  </span>
+                  <Icon className="w-6 h-6 text-gray-400" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="right" className="text-[10px] tracking-wider rounded-none">
-                {item.full}
-              </TooltipContent>
+              <TooltipContent side="right">{item.label}</TooltipContent>
             </Tooltip>
           );
         })}
 
-        {/* Bottom */}
-        <div className="mt-auto flex flex-col items-center gap-2">
-          <div className="flex items-center gap-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-dt-green animate-pulse-green" />
-            <span className="text-[7px] text-dt-green tracking-wider">LIVE</span>
-          </div>
-
-          {isAdmin && (
+        {isAdmin && (
+          <div className="mt-auto">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={() => { clearAccess(); navigate("/"); }}
-                  className="w-8 h-8 text-border hover:text-dt-red rounded-none"
+                  className="w-10 h-10 text-gray-500 hover:text-white"
                 >
-                  <LogOut className="w-3 h-3" />
+                  <LogOut className="w-4 h-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="right" className="text-[10px] tracking-wider rounded-none">
-                EXIT ADMIN
-              </TooltipContent>
+              <TooltipContent side="right">Exit Admin</TooltipContent>
             </Tooltip>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </TooltipProvider>
   );

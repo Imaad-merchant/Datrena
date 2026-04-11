@@ -6,16 +6,10 @@ export default {
     content: ["./index.html", "./src/**/*.{ts,tsx,js,jsx}"],
   theme: {
   	extend: {
-  		fontFamily: {
-  			mono: ['"JetBrains Mono"', 'monospace'],
-  			sans: ['"JetBrains Mono"', 'monospace'],
-  		},
   		borderRadius: {
-  			lg: '0.125rem',
-  			md: '0.125rem',
-  			sm: '0.0625rem',
-  			xl: '0.1875rem',
-  			'2xl': '0.25rem',
+  			lg: 'var(--radius)',
+  			md: 'calc(var(--radius) - 2px)',
+  			sm: 'calc(var(--radius) - 4px)'
   		},
   		colors: {
   			background: 'hsl(var(--background))',
@@ -68,12 +62,6 @@ export default {
   				border: 'hsl(var(--sidebar-border))',
   				ring: 'hsl(var(--sidebar-ring))'
   			},
-  			'dt-green': '#22C55E',
-  			'dt-red': '#EF4444',
-  			'dt-blue': '#3B82F6',
-  			'dt-purple': '#8B5CF6',
-  			'dt-amber': '#F59E0B',
-  			'dt-emerald': '#10B981',
   		},
   		keyframes: {
   			'accordion-down': {

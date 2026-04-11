@@ -9,7 +9,6 @@ const PLANS = {
     name: "Trader",
     price: 20,
     icon: Shield,
-    color: "#3b82f6",
     description: "Full analytical suite for active traders.",
     features: [
       "Real-Time Candlestick Chart",
@@ -25,7 +24,6 @@ const PLANS = {
     name: "Pro",
     price: 40,
     icon: Crown,
-    color: "#f59e0b",
     description: "Everything, including upcoming features.",
     features: [
       "Real-Time Candlestick Chart",
@@ -104,8 +102,8 @@ export default function Checkout() {
 
             <div className="bg-gray-900/60 border border-gray-800/50 rounded-xl p-6 mb-6">
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: plan.color + "15" }}>
-                  <Icon className="w-5 h-5" style={{ color: plan.color }} />
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-gray-800/60">
+                  <Icon className="w-5 h-5 text-gray-400" />
                 </div>
                 <div>
                   <h2 className="text-lg font-bold text-white">{plan.name} Plan</h2>
@@ -116,7 +114,7 @@ export default function Checkout() {
               <ul className="space-y-2 mb-6">
                 {plan.features.map((f, i) => (
                   <li key={i} className="flex items-center gap-2 text-sm">
-                    <Check className="w-3.5 h-3.5 text-green-400 shrink-0" />
+                    <Check className="w-3.5 h-3.5 text-gray-300 shrink-0" />
                     <span className="text-gray-300">{f}</span>
                   </li>
                 ))}
@@ -177,7 +175,7 @@ export default function Checkout() {
                   onChange={e => handleChange("card", e.target.value)}
                   placeholder="4242 4242 4242 4242"
                   maxLength={19}
-                  className="w-full bg-gray-900/60 border border-gray-800/50 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gray-600 transition-colors font-mono tracking-wider"
+                  className="w-full bg-gray-900/60 border border-gray-800/50 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gray-600 transition-colors tabular-nums tracking-wider"
                 />
               </div>
 
@@ -190,7 +188,7 @@ export default function Checkout() {
                     onChange={e => handleChange("exp", e.target.value)}
                     placeholder="MM / YY"
                     maxLength={7}
-                    className="w-full bg-gray-900/60 border border-gray-800/50 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gray-600 transition-colors font-mono"
+                    className="w-full bg-gray-900/60 border border-gray-800/50 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gray-600 transition-colors tabular-nums"
                   />
                 </div>
                 <div>
@@ -201,7 +199,7 @@ export default function Checkout() {
                     onChange={e => handleChange("cvc", e.target.value)}
                     placeholder="123"
                     maxLength={4}
-                    className="w-full bg-gray-900/60 border border-gray-800/50 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gray-600 transition-colors font-mono"
+                    className="w-full bg-gray-900/60 border border-gray-800/50 rounded-lg px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-gray-600 transition-colors tabular-nums"
                   />
                 </div>
               </div>

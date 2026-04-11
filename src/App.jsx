@@ -16,6 +16,8 @@ import ForgeLabs from './pages/ForgeLabs';
 import GithubPRs from './pages/GithubPRs';
 import DataLayer from './pages/DataLayer';
 import Checkout from './pages/Checkout';
+import SignIn from './pages/SignIn';
+import Backtesting from './pages/Backtesting';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -35,10 +37,10 @@ const AuthenticatedApp = () => {
   // Show loading spinner while checking app public settings or auth
   if (isLoadingPublicSettings || (isLoadingAuth && !isAdmin)) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-[#020617]">
+      <div className="fixed inset-0 flex items-center justify-center bg-black">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-6 h-6 border-2 border-[#334155] border-t-[#22C55E] rounded-full animate-spin"></div>
-          <span className="text-[11px] text-[#94A3B8] font-mono tracking-wider">CONNECTING...</span>
+          <div className="w-6 h-6 border-2 border-gray-700 border-t-white rounded-full animate-spin"></div>
+          <span className="text-xs text-gray-400">Connecting...</span>
         </div>
       </div>
     );
@@ -54,6 +56,8 @@ const AuthenticatedApp = () => {
       <Route path="/GithubPRs" element={<GithubPRs />} />
       <Route path="/DataLayer" element={<DataLayer />} />
       <Route path="/Checkout" element={<Checkout />} />
+      <Route path="/SignIn" element={<SignIn />} />
+      <Route path="/Backtesting" element={<Backtesting />} />
 
       {/* Authenticated routes — accessible via login OR Shift+Z */}
       {isAuthenticated ? (
