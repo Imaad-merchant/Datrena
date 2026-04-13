@@ -28,13 +28,13 @@ const LayoutWrapper = ({ children, currentPageName }) => Layout ?
   : <>{children}</>;
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, isLoadingPublicSettings, authError, user } = useAuth();
+  const { isLoadingAuth, isLoadingPublicSettings, authError, user, isAuthenticated: firebaseAuth } = useAuth();
   const { isAdmin } = useSecretAccess();
 
-  // Treat admin as authenticated
-  const isAuthenticated = !!user || isAdmin;
+  // Treat admin OR Firebase auth as authenticated
+  const isAuthenticated = firebaseAuth || isAdmin;
 
-  // Show loading spinner while checking app public settings or auth
+  // Show loading spinner while checking auth
   if (isLoadingPublicSettings || (isLoadingAuth && !isAdmin)) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-black">

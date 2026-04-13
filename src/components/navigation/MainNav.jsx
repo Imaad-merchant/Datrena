@@ -2,6 +2,7 @@ import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { useSecretAccess } from "@/hooks/useSecretAccess";
+import { useAuth } from "@/lib/AuthContext";
 import { Database, Bot, BarChart3, FlaskConical, Home, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -18,6 +19,7 @@ export default function MainNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAdmin, clearAccess } = useSecretAccess();
+  const { user, logout } = useAuth();
   const currentPage = location.pathname.split('/').pop() || 'QuantHome';
 
   return (
@@ -60,20 +62,23 @@ export default function MainNav() {
           );
         })}
 
-        {isAdmin && (
-          <div className="mt-auto">
+        {(isAdmin || user) && (
+          <div className="mt-auto flex flex-col items-center gap-2">
+            {user?.photoURL && (
+              <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full border border-gray-700" />
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => { clearAccess(); navigate("/"); }}
+                  onClick={async () => { clearAccess(); await logout(); navigate("/"); }}
                   className="w-10 h-10 text-gray-500 hover:text-white"
                 >
                   <LogOut className="w-4 h-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="right">Exit Admin</TooltipContent>
+              <TooltipContent side="right">Sign Out</TooltipContent>
             </Tooltip>
           </div>
         )}
