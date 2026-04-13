@@ -1,6 +1,5 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
 import { FlaskConical, Code2, Cpu, Database, ArrowRight, Clock, CheckCircle2, Circle } from "lucide-react";
 import LandingNav from "../components/landing/LandingNav";
 import LandingFooter from "../components/landing/LandingFooter";
@@ -175,7 +174,7 @@ export default function ForgeLabs() {
           <h2 className="text-2xl font-bold text-white mb-3">Want early access?</h2>
           <p className="text-gray-400 text-sm mb-6">Sign up now to be the first to test new features as they ship.</p>
           <button
-            onClick={() => base44.auth.redirectToLogin("/QuantHome")}
+            onClick={() => window.location.href = "/SignIn"}
             className="bg-white text-black font-semibold px-8 py-3 rounded-full hover:bg-gray-200 transition-colors text-sm inline-flex items-center gap-2"
           >
             Sign Up Free <ArrowRight className="w-4 h-4" />

@@ -1,5 +1,4 @@
 import React, { useState, useCallback } from "react";
-import { base44 } from "@/api/base44Client";
 import TerminalSettings from "../components/terminal/TerminalSettings";
 import VolatilityHeatmap from "../components/terminal/VolatilityHeatmap";
 import AIChat from "../components/terminal/AIChat";
@@ -19,18 +18,9 @@ export default function Terminal() {
     setLoading(true);
     setError(null);
     setData(null);
-    try {
-      const res = await base44.functions.invoke("fetchStockData", {
-        symbol,
-        days: lookbackDays,
-        timeframe,
-      });
-      setData(res.data);
-    } catch (e) {
-      setError(e?.response?.data?.error || e.message || "Failed to fetch data");
-    } finally {
-      setLoading(false);
-    }
+    // TODO: Replace with your own API endpoint
+    setError("Data backend not connected. Connect your own API.");
+    setLoading(false);
   }, [symbol, lookbackDays, timeframe]);
 
   const aiContext = data
@@ -93,14 +83,9 @@ NY Open Price: ${data.nyOpenPrice?.toFixed(2) ?? "N/A"}`
                   setLoading(true);
                   setError(null);
                   setData(null);
-                  try {
-                    const res = await base44.functions.invoke("fetchStockData", { symbol, days: lookbackDays, timeframe: tf });
-                    setData(res.data);
-                  } catch (e) {
-                    setError(e?.response?.data?.error || e.message || "Failed to fetch data");
-                  } finally {
-                    setLoading(false);
-                  }
+                  // TODO: Replace with your own API endpoint
+                  setError("Data backend not connected. Connect your own API.");
+                  setLoading(false);
                 }}
               />
               <AIChat context={aiContext} />

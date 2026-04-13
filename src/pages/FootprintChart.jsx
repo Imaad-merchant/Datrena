@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import MainNav from "../components/navigation/MainNav";
-import { base44 } from "@/api/base44Client";
 
 const WS_URL = "wss://elsa-censureless-joyce.ngrok-free.dev";
 const TICK_SIZE = 0.25;
@@ -88,13 +87,8 @@ export default function FootprintChart() {
       const interval = tf === "1m" ? "1m" : tf === "5m" ? "5m" : "15m";
       const range = tf === "1m" ? "5d" : "30d";
 
-      const res = await base44.functions.invoke('fetchYahooHistory', {
-        symbol: sym,
-        interval,
-        range
-      });
-
-      const json = res.data;
+      // TODO: Replace with your own API endpoint
+      const json = null;
       const result = json?.chart?.result?.[0];
       if (!result) return;
 

@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
 import MainNav from "../components/navigation/MainNav";
 import { Button } from "@/components/ui/button";
 import { Send, Bot, User, Loader2 } from "lucide-react";
@@ -36,20 +35,12 @@ export default function AnalysisLayer() {
     setMessages(prev => [...prev, { role: "user", content: userMsg }]);
     setLoading(true);
 
-    try {
-      const res = await base44.functions.invoke("aiQuantChat", {
-        messages: [...messages, { role: "user", content: userMsg }],
-        context: "Datrena Research Terminal — quantitative analysis on Rithmic MBO Level 3 market data. Instruments: ES, NQ, CL, GC, YM, ZB, 6E, SI.",
-      });
-      setMessages(prev => [...prev, { role: "assistant", content: res.data.answer }]);
-    } catch (e) {
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: `Error: ${e?.response?.data?.error || e.message}`
-      }]);
-    } finally {
-      setLoading(false);
-    }
+    // TODO: Replace with your own API endpoint
+    setMessages(prev => [...prev, {
+      role: "assistant",
+      content: "AI backend not connected. Connect your own API to enable AI analysis.",
+    }]);
+    setLoading(false);
   };
 
   return (

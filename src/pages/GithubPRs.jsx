@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
 import { GitPullRequest, Clock, User, RefreshCw, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,13 +13,8 @@ export default function GithubPRs() {
   const fetchPRs = async () => {
     setLoading(true);
     setError(null);
-    const res = await base44.functions.invoke('getGithubPRs', {});
-    if (res.data.error) {
-      setError(res.data.error);
-    } else {
-      setPrs(res.data.prs || []);
-      setGithubUser(res.data.github_user || '');
-    }
+    // TODO: Replace with your own GitHub API endpoint
+    setError('GitHub integration not connected. Connect your own API.');
     setLoading(false);
   };
 

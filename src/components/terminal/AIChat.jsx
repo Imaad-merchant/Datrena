@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send, Bot, User, Loader2, ChevronDown, ChevronUp } from "lucide-react";
@@ -30,20 +29,12 @@ export default function AIChat({ context }) {
     setMessages(prev => [...prev, { role: "user", content: userMsg }]);
     setLoading(true);
 
-    try {
-      const res = await base44.functions.invoke("aiQuantChat", {
-        messages: [...messages, { role: "user", content: userMsg }],
-        context,
-      });
-      setMessages(prev => [...prev, { role: "assistant", content: res.data.answer }]);
-    } catch (e) {
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: `Error: ${e?.response?.data?.error || e.message}`
-      }]);
-    } finally {
-      setLoading(false);
-    }
+    // TODO: Replace with your own API endpoint
+    setMessages(prev => [...prev, {
+      role: "assistant",
+      content: "AI backend not connected. Connect your own API to enable AI analysis.",
+    }]);
+    setLoading(false);
   };
 
   return (

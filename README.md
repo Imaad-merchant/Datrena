@@ -10,5 +10,5 @@ A proprietary research engine designed to automate forensic due diligence and vo
 
 ## Tech Stack
 * **Language:** Python / Vite
-* **Infrastructure:** Base44 Deployment
+* **Infrastructure:** Vite + React
 * **APIs:** Yahoo Finance, OpenAI/Anthropic
