@@ -1,0 +1,14 @@
+{
+  "name": "datrena-marketing-bot",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "post": "node bot.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "dotenv": "^17.4.2",
+    "twitter-api-v2": "^1.18.2"
+  }
+}

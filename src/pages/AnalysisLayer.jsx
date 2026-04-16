@@ -35,12 +35,26 @@ export default function AnalysisLayer() {
     setMessages(prev => [...prev, { role: "user", content: userMsg }]);
     setLoading(true);
 
-    // TODO: Replace with your own API endpoint
-    setMessages(prev => [...prev, {
-      role: "assistant",
-      content: "AI backend not connected. Connect your own API to enable AI analysis.",
-    }]);
-    setLoading(false);
+    try {
+      const res = await fetch("/api/ai-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [...messages, { role: "user", content: userMsg }],
+          context: "Datrena Research Terminal — quantitative analysis on Rithmic MBO Level 3 market data. Instruments: ES, NQ, CL, GC, YM, ZB, 6E, SI.",
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setMessages(prev => [...prev, { role: "assistant", content: data.answer }]);
+    } catch (e) {
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: `Error: ${e.message}`,
+      }]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
