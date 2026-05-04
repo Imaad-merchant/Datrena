@@ -10,10 +10,13 @@ import { Apple, Monitor, ArrowRight, Check } from "lucide-react";
 
 const RELEASE_REPO = "Imaad-merchant/Datrena";
 const RELEASE_TAG = "v0.1.0";
+const VERSION = RELEASE_TAG.replace(/^v/, "");
+const RELEASE_BASE = `https://github.com/${RELEASE_REPO}/releases/download/${RELEASE_TAG}`;
 
 const downloads = {
-  mac: `https://github.com/${RELEASE_REPO}/releases/download/${RELEASE_TAG}/Datrena-${RELEASE_TAG.replace(/^v/, "")}-arm64.dmg`,
-  win: `https://github.com/${RELEASE_REPO}/releases/download/${RELEASE_TAG}/Datrena-Setup-${RELEASE_TAG.replace(/^v/, "")}.exe`,
+  macArm: `${RELEASE_BASE}/Datrena-${VERSION}-arm64-mac.zip`,
+  macIntel: `${RELEASE_BASE}/Datrena-${VERSION}-mac.zip`,
+  win: null, // coming in v0.1.1
 };
 
 const FREE_FEATURES = [
@@ -42,34 +45,51 @@ export default function Download() {
         </div>
 
         {/* Download buttons */}
-        <div className="grid md:grid-cols-2 gap-4 max-w-2xl mx-auto mb-16">
+        <div className="grid md:grid-cols-2 gap-4 max-w-2xl mx-auto mb-8">
           <a
-            href={downloads.mac}
+            href={downloads.macArm}
             className="group flex items-center gap-4 bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-xl p-5 transition"
           >
             <div className="w-12 h-12 rounded-lg bg-zinc-900 flex items-center justify-center">
               <Apple className="w-6 h-6" />
             </div>
             <div className="flex-1">
-              <div className="text-sm font-semibold">macOS</div>
-              <div className="text-xs text-zinc-500">Apple Silicon · 12+</div>
+              <div className="text-sm font-semibold">macOS · Apple Silicon</div>
+              <div className="text-xs text-zinc-500">M1 / M2 / M3 / M4 · .zip</div>
             </div>
             <ArrowRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition" />
           </a>
 
           <a
-            href={downloads.win}
+            href={downloads.macIntel}
             className="group flex items-center gap-4 bg-zinc-950 border border-zinc-800 hover:border-zinc-600 rounded-xl p-5 transition"
           >
             <div className="w-12 h-12 rounded-lg bg-zinc-900 flex items-center justify-center">
-              <Monitor className="w-6 h-6" />
+              <Apple className="w-6 h-6" />
             </div>
             <div className="flex-1">
-              <div className="text-sm font-semibold">Windows</div>
-              <div className="text-xs text-zinc-500">10 / 11 · 64-bit</div>
+              <div className="text-sm font-semibold">macOS · Intel</div>
+              <div className="text-xs text-zinc-500">Pre-2020 Macs · .zip</div>
             </div>
             <ArrowRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition" />
           </a>
+        </div>
+
+        {/* Windows coming soon */}
+        <div className="max-w-2xl mx-auto mb-12 flex items-center gap-3 bg-zinc-950/50 border border-dashed border-zinc-800 rounded-xl p-4">
+          <Monitor className="w-5 h-5 text-zinc-600" />
+          <div className="flex-1 text-xs text-zinc-500">
+            <strong className="text-zinc-400">Windows installer</strong> coming in v0.1.1.
+            Not on Mac? Drop your email and we'll ping you when it ships.
+          </div>
+        </div>
+
+        {/* Install hint */}
+        <div className="max-w-2xl mx-auto mb-10 bg-amber-950/20 border border-amber-900/40 rounded-lg p-4 text-xs text-amber-200/80 leading-relaxed">
+          <strong className="text-amber-300">First-launch note:</strong> Datrena isn't yet
+          Apple-notarized, so macOS will block it on first open. To launch: unzip the
+          file, then <strong>right-click Datrena.app → Open → Open</strong>. Only needed
+          once. (Notarization is in progress.)
         </div>
 
         {/* What's free */}
