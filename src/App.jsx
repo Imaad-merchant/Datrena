@@ -2,7 +2,10 @@ import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { pagesConfig } from './pages.config'
-import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Route, Routes, Navigate } from 'react-router-dom';
+
+// Use HashRouter inside Electron (file:// protocol), BrowserRouter on the web
+const Router = (typeof window !== 'undefined' && window.datrena?.isElectron) ? HashRouter : BrowserRouter;
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { PlanProvider } from '@/lib/PlanContext';
@@ -18,6 +21,7 @@ import DataLayer from './pages/DataLayer';
 import Checkout from './pages/Checkout';
 import SignIn from './pages/SignIn';
 import Backtesting from './pages/Backtesting';
+import Download from './pages/Download';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -58,6 +62,7 @@ const AuthenticatedApp = () => {
       <Route path="/Checkout" element={<Checkout />} />
       <Route path="/SignIn" element={<SignIn />} />
       <Route path="/Backtesting" element={<Backtesting />} />
+      <Route path="/Download" element={<Download />} />
 
       {/* Authenticated routes — accessible via login OR Shift+Z */}
       {isAuthenticated ? (

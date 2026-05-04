@@ -172,12 +172,12 @@ export default function ForgeLabs() {
       <section className="border-t border-gray-800/40 bg-gradient-to-b from-gray-950 to-black">
         <div className="max-w-[1400px] mx-auto w-full px-6 lg:px-16 py-16 text-center">
           <h2 className="text-2xl font-bold text-white mb-3">Want early access?</h2>
-          <p className="text-gray-400 text-sm mb-6">Sign up now to be the first to test new features as they ship.</p>
+          <p className="text-gray-400 text-sm mb-6">Download Datrena and be the first to test new features as they ship.</p>
           <button
-            onClick={() => window.location.href = "/SignIn"}
+            onClick={() => window.location.href = "/Download"}
             className="bg-white text-black font-semibold px-8 py-3 rounded-full hover:bg-gray-200 transition-colors text-sm inline-flex items-center gap-2"
           >
-            Sign Up Free <ArrowRight className="w-4 h-4" />
+            Download Datrena <ArrowRight className="w-4 h-4" />
           </button>
         </div>
       </section>

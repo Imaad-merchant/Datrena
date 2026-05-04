@@ -26,10 +26,10 @@ export default function LandingNav({ activePage }) {
           </Link>
         ))}
         <Link
-          to="/SignIn"
+          to="/Download"
           className="text-sm font-semibold bg-white text-black px-4 py-1.5 rounded-full hover:bg-gray-200 transition-colors ml-2"
         >
-          Sign In
+          Download
         </Link>
       </div>
     </nav>

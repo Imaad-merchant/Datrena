@@ -134,8 +134,8 @@ export default function Pricing() {
                         : "text-gray-400 border-gray-700 hover:border-gray-500 hover:text-white"
                     }`}
                   >
-                    <Link to="/SignIn" onClick={() => handleAction(plan)}>
-                      {plan.price === 0 ? "Get Started" : `Get ${plan.name}`}
+                    <Link to="/Download" onClick={() => handleAction(plan)}>
+                      {plan.price === 0 ? "Download Free" : `Get ${plan.name}`}
                     </Link>
                   </Button>
                 </CardFooter>

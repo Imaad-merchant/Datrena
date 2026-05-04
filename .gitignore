@@ -14,6 +14,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+release/
 *.local
 
 # Editor directories and files
@@ -28,3 +29,10 @@ dist-ssr
 *.sw?
 
 .env
+
+# Rithmic protobuf files (proprietary — do NOT commit)
+server/protobuf/*_pb2.py
+server/protobuf/*.proto
+rithmic_ssl_cert_auth_params
+!server/protobuf/README.md
+.vercel

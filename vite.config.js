@@ -5,6 +5,8 @@ import path from 'path'
 // https://vite.dev/config/
 export default defineConfig({
   logLevel: 'error',
+  // Relative base lets the same build run on Vercel (datrena.com) AND inside Electron (file://)
+  base: './',
   plugins: [
     react(),
   ],

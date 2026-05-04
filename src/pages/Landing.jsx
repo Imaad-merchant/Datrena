@@ -125,7 +125,7 @@ export default function Landing() {
 
           <div className="flex items-center gap-4">
             <Button asChild className="bg-white text-black hover:bg-gray-200 text-sm font-semibold px-7 h-12 rounded-lg gap-2">
-              <Link to="/SignIn">Start for Free <ArrowRight className="w-4 h-4" /></Link>
+              <Link to="/Download">Download Datrena <ArrowRight className="w-4 h-4" /></Link>
             </Button>
             <Button variant="outline" asChild className="text-sm text-gray-400 hover:text-white border-gray-700 hover:border-gray-500 px-6 h-12 rounded-lg gap-1">
               <Link to="/Features">View All Features <ChevronRight className="w-4 h-4" /></Link>
@@ -258,7 +258,7 @@ export default function Landing() {
           </p>
           <div className="flex items-center justify-center gap-4">
             <Button asChild className="bg-white text-black hover:bg-gray-200 text-sm font-semibold px-8 h-12 rounded-lg gap-2">
-              <Link to="/SignIn">Get Started Free <ArrowRight className="w-4 h-4" /></Link>
+              <Link to="/Download">Download Datrena <ArrowRight className="w-4 h-4" /></Link>
             </Button>
             <Button variant="outline" asChild className="text-sm text-gray-400 hover:text-white border-gray-700 hover:border-gray-500 px-7 h-12 rounded-lg">
               <Link to="/Pricing">View Pricing</Link>

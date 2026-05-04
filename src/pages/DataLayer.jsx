@@ -1,11 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { RefreshCw, Wifi, WifiOff, ChevronsRight, ChevronDown, Layers, Eye, EyeOff } from "lucide-react";
 import MainNav from "../components/navigation/MainNav";
+import DesktopGate from "../components/DesktopGate";
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const WS_URL = "ws://localhost:8080";
-const TICK   = 0.25;
-const IMB    = 3;
+// Binance live data — direct WebSocket from the desktop app.
+const BINANCE_WS_BASE = "wss://stream.binance.com:9443/stream?streams=";
+const BINANCE_REST_BASE = "https://api.binance.com/api/v3";
+
+// Tick size is now per-symbol (set when ticker changes). Default = 1.0.
+let TICK = 1.0;
+const IMB = 3;
 
 const VOL_W   = 52;
 const PRICE_W = 58;
@@ -134,14 +139,18 @@ function processHistoryCandle(candlesObj, ohlcObj, candle, tf) {
   }
 }
 
-const BASES = { "ES=F": 5812, "NQ=F": 20150, "CL=F": 72.5, "GC=F": 2340 };
-
-const TICKER_INFO = {
-  "ES=F": { name: "S&P 500 E-mini", exchange: "CME" },
-  "NQ=F": { name: "Nasdaq 100 E-mini", exchange: "CME" },
-  "CL=F": { name: "Crude Oil", exchange: "NYMEX" },
-  "GC=F": { name: "Gold", exchange: "COMEX" },
-};
+// Symbol metadata is fetched dynamically from Binance /exchangeInfo on mount.
+// Tick size is auto-derived per symbol from the current price (sensible
+// footprint bucket — rendering every $0.01 cent at BTC $95k is meaningless).
+function autoTick(price) {
+  if (!price || price <= 0) return 1;
+  // Roughly 1/1000th of price, snapped to a 1-2-5 step
+  const target = price * 0.001;
+  const mag = Math.pow(10, Math.floor(Math.log10(target)));
+  const norm = target / mag;
+  const step = norm < 1.5 ? 1 : norm < 3.5 ? 2 : norm < 7.5 ? 5 : 10;
+  return step * mag;
+}
 
 const TIMEFRAMES = ["1m","2m","3m","5m","10m","15m","30m","1h","4h","D","W","M"];
 
@@ -158,8 +167,11 @@ const OVERLAY_DEFS = [
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function DataLayer() {
   const [status,    setStatus]    = useState("disconnected");
-  const [ticker,    setTicker]    = useState("ES=F");
+  const [ticker,    setTicker]    = useState("BTCUSDT");
   const [timeframe, setTimeframe] = useState("5m");
+  const [symbols,   setSymbols]   = useState([]); // all Binance USDT pairs
+  const [tickerQuery, setTickerQuery] = useState("BTCUSDT");
+  const [showTickerMenu, setShowTickerMenu] = useState(false);
   const [dataMode,  setDataMode]  = useState("demo");
   const [countdown, setCountdown] = useState("");
   const [showSnap,  setShowSnap]  = useState(false);
@@ -190,6 +202,40 @@ export default function DataLayer() {
 
   useEffect(() => { timeframeRef.current = timeframe; }, [timeframe]);
   useEffect(() => { overlaysRef.current = overlays; }, [overlays]);
+
+  // Fetch every active Binance trading pair on mount (cached for the session)
+  useEffect(() => {
+    let abort = false;
+    (async () => {
+      try {
+        const res = await fetch(`${BINANCE_REST_BASE}/exchangeInfo`);
+        if (!res.ok) throw new Error(`exchangeInfo ${res.status}`);
+        const data = await res.json();
+        if (abort) return;
+        const list = (data.symbols || [])
+          .filter((s) => s.status === "TRADING")
+          .map((s) => ({
+            symbol: s.symbol,
+            base: s.baseAsset,
+            quote: s.quoteAsset,
+          }))
+          // Sort: USDT pairs first, then USDC, BTC, ETH, then alphabetical
+          .sort((a, b) => {
+            const order = { USDT: 0, USDC: 1, BTC: 2, ETH: 3 };
+            const oa = order[a.quote] ?? 9;
+            const ob = order[b.quote] ?? 9;
+            if (oa !== ob) return oa - ob;
+            return a.symbol.localeCompare(b.symbol);
+          });
+        setSymbols(list);
+      } catch (err) {
+        console.warn("Binance exchangeInfo fetch failed:", err.message);
+      }
+    })();
+    return () => {
+      abort = true;
+    };
+  }, []);
 
   const view = useRef({
     cW: DEFAULT_CW, cH: DEFAULT_CH,
@@ -957,9 +1003,10 @@ export default function DataLayer() {
     return () => ro.disconnect();
   }, [scheduleDraw]);
 
-  // ── Load demo data ──
-  const loadData = useCallback((sym, tf) => {
-    const { ohlc, candles } = genDemo(BASES[sym] || 5800, 600, tf);
+  // ── Load demo data (used as fallback while live history is being fetched) ──
+  const loadData = useCallback((_sym, tf) => {
+    // Crude default base price — overwritten the moment Binance klines arrive
+    const { ohlc, candles } = genDemo(100, 600, tf);
     candlesRef.current = candles;
     ohlcRef.current = ohlc;
     view.current.userScrolled = false;
@@ -969,78 +1016,133 @@ export default function DataLayer() {
 
   useEffect(() => { loadData(ticker, timeframe); }, [ticker, loadData]); // eslint-disable-line
 
-  // ── WebSocket (NO timeframe dep — uses timeframeRef) ──
+  // ── Binance live data feed (WebSocket trades + depth + REST history) ──
+  // Reconnects whenever the symbol changes. Timeframe changes are handled by
+  // the re-bucket effect below (they don't need a reconnect).
   useEffect(() => {
-    let ws, timer;
+    let ws, timer, abort = false;
+    const sym = ticker.toLowerCase();
+
+    // 1) Backfill OHLC history from REST klines (1m, latest 500 bars)
+    (async () => {
+      try {
+        const res = await fetch(
+          `${BINANCE_REST_BASE}/klines?symbol=${ticker}&interval=1m&limit=500`
+        );
+        if (!res.ok) throw new Error(`klines ${res.status}`);
+        const klines = await res.json();
+        if (abort) return;
+
+        // Derive tick size from the most recent close (1/1000th of price, snapped to 1-2-5)
+        const lastClose = klines.length ? parseFloat(klines[klines.length - 1][4]) : 0;
+        TICK = autoTick(lastClose);
+        // Binance kline: [openTime, open, high, low, close, volume, closeTime, ...]
+        const candles = klines.map((k) => ({
+          time: new Date(k[0]).toISOString().slice(0, 16),
+          o: parseFloat(k[1]),
+          h: parseFloat(k[2]),
+          l: parseFloat(k[3]),
+          c: parseFloat(k[4]),
+          v: parseFloat(k[5]),
+        }));
+        const tf = timeframeRef.current;
+        historyRef.current = candles;
+        candlesRef.current = {};
+        ohlcRef.current = {};
+        candles.forEach((c) =>
+          processHistoryCandle(candlesRef.current, ohlcRef.current, c, tf)
+        );
+        rawTradesRef.current = [];
+        view.current.userScrolled = false;
+        setDataMode("live");
+        scheduleDraw();
+      } catch (err) {
+        // History fetch failed — leave demo data in place
+        console.warn("Binance klines fetch failed:", err.message);
+      }
+    })();
+
     function connect() {
-      ws = new WebSocket(WS_URL);
+      // Combined stream: trades + depth (top 20 levels, 100ms diff cadence)
+      const streams = [`${sym}@trade`, `${sym}@depth20@100ms`].join("/");
+      ws = new WebSocket(`${BINANCE_WS_BASE}${streams}`);
+
       ws.onopen = () => {
         setStatus("connected");
         setDataMode("live");
       };
       ws.onerror = () => setStatus("error");
-      ws.onclose = () => { setStatus("disconnected"); timer = setTimeout(connect, 10000); };
-      ws.onmessage = e => {
+      ws.onclose = () => {
+        setStatus("disconnected");
+        if (!abort) timer = setTimeout(connect, 5000);
+      };
+      ws.onmessage = (e) => {
         try {
-          const d = JSON.parse(e.data);
+          const msg = JSON.parse(e.data);
+          const stream = msg.stream;
+          const data = msg.data;
+          if (!stream || !data) return;
           const tf = timeframeRef.current;
 
-          if (d.type === "history") {
-            // Store 1m history and aggregate to current TF
-            historyRef.current = d.candles || [];
-            candlesRef.current = {};
-            ohlcRef.current = {};
-            historyRef.current.forEach(c => processHistoryCandle(candlesRef.current, ohlcRef.current, c, tf));
-            rawTradesRef.current = [];
-            view.current.userScrolled = false;
-            scheduleDraw();
-            return;
-          }
+          if (stream.endsWith("@trade")) {
+            // Binance trade: m=true means buyer is maker → market sell into bid.
+            // m=false means buyer took the offer → market buy lifting ask.
+            const price = parseFloat(data.p);
+            const qty = parseFloat(data.q);
+            const isBuyerMaker = data.m;
+            const trade = {
+              type: "trade",
+              timestamp: new Date(data.T).toISOString(),
+              price,
+              bid_volume: isBuyerMaker ? qty : 0,
+              ask_volume: isBuyerMaker ? 0 : qty,
+            };
+            rawTradesRef.current.push(trade);
+            if (rawTradesRef.current.length > 50000) {
+              rawTradesRef.current = rawTradesRef.current.slice(-40000);
+            }
+            bucketTrade(candlesRef.current, ohlcRef.current, trade, tf);
 
-          if (d.type === "trade") {
-            rawTradesRef.current.push(d);
-            if (rawTradesRef.current.length > 50000) rawTradesRef.current = rawTradesRef.current.slice(-40000);
-            bucketTrade(candlesRef.current, ohlcRef.current, d, tf);
-            // Re-engage auto-follow after 5s idle
             const vw = view.current;
-            if (vw.userScrolled && vw.lastInteraction && Date.now() - vw.lastInteraction > 5000) {
+            if (
+              vw.userScrolled &&
+              vw.lastInteraction &&
+              Date.now() - vw.lastInteraction > 5000
+            ) {
               vw.userScrolled = false;
             }
             scheduleDraw();
             return;
           }
 
-          if (d.type === "book_update") {
-            bookRef.current = { bids: d.bids || [], asks: d.asks || [] };
-            scheduleDraw();
-            return;
-          }
-
-          if (d.type === "order_event") {
-            orderEventsRef.current.push(d);
-            if (orderEventsRef.current.length > 500) orderEventsRef.current = orderEventsRef.current.slice(-400);
-            scheduleDraw();
-            return;
-          }
-
-          if (d.type === "iceberg_alert") {
-            icebergAlertsRef.current.push(d);
-            if (icebergAlertsRef.current.length > 50) icebergAlertsRef.current = icebergAlertsRef.current.slice(-40);
-            scheduleDraw();
-            return;
-          }
-
-          if (d.type === "pull_rate") {
-            pullRateRef.current[`${d.price}_${d.side}`] = d;
+          if (stream.endsWith("@depth20@100ms")) {
+            // Binance depth20: { bids: [[price, qty], ...], asks: [[price, qty], ...] }
+            bookRef.current = {
+              bids: (data.bids || []).map(([p, q]) => ({
+                price: parseFloat(p),
+                size: parseFloat(q),
+                orderCount: 0, // L2 only — Binance doesn't expose order counts
+              })),
+              asks: (data.asks || []).map(([p, q]) => ({
+                price: parseFloat(p),
+                size: parseFloat(q),
+                orderCount: 0,
+              })),
+            };
             scheduleDraw();
             return;
           }
         } catch {}
       };
     }
+
     connect();
-    return () => { clearTimeout(timer); if (ws) ws.close(); };
-  }, [scheduleDraw]);
+    return () => {
+      abort = true;
+      clearTimeout(timer);
+      if (ws) ws.close();
+    };
+  }, [ticker, scheduleDraw]);
 
   // ── Timeframe change — re-bucket without WS reconnect ──
   useEffect(() => {
@@ -1095,12 +1197,28 @@ export default function DataLayer() {
     scheduleDraw();
   }, [scheduleDraw]);
 
-  const label = ticker.replace("=F", "");
-  const info = TICKER_INFO[ticker] || {};
+  // Format display label from the ticker (BTCUSDT → BTC/USDT, ETHBTC → ETH/BTC, etc.)
+  const symbolMeta = symbols.find((s) => s.symbol === ticker);
+  const label = symbolMeta
+    ? `${symbolMeta.base}/${symbolMeta.quote}`
+    : ticker;
+  const info = symbolMeta
+    ? { name: symbolMeta.base, exchange: "Binance" }
+    : { name: "", exchange: "Binance" };
+
+  // Filter symbols by the user's search input (debounce-free, list is in-memory)
+  const filteredSymbols = (() => {
+    const q = tickerQuery.trim().toUpperCase();
+    if (!q) return symbols.slice(0, 100);
+    return symbols
+      .filter((s) => s.symbol.includes(q) || s.base.includes(q))
+      .slice(0, 100);
+  })();
   const barUp = hoverBar ? hoverBar.c >= hoverBar.o : false;
   const barColor = barUp ? "#22c55e" : "#ef4444";
 
   return (
+    <DesktopGate title="Datrena Charting">
     <div style={{ height: "100vh", background: "#0a0a10", display: "flex", flexDirection: "column", fontFamily: "monospace", paddingLeft: "4rem" }}>
       <MainNav />
 
@@ -1111,7 +1229,7 @@ export default function DataLayer() {
         color: "#f59e0b", shrink: 0,
       }}>
         <span style={{ fontWeight: 700 }}>⚠</span>
-        <span>Datrena is currently fixing its live data connection. Chart data shown is simulated.</span>
+        <span>Live Binance feed. Volume on the footprint is per-trade — for true L3 (per-order) attach a Rithmic/CQG feed.</span>
       </div>
 
       {/* ── Toolbar ── */}
@@ -1159,16 +1277,62 @@ export default function DataLayer() {
           padding: "2px 8px", minWidth: 42, textAlign: "center", letterSpacing: 1,
         }}>{countdown}</span>
 
-        {/* Ticker selector */}
-        <select value={ticker} onChange={e => setTicker(e.target.value)} style={{
-          background: "#0c0c14", border: "1px solid #1a1a2c", color: "#505068",
-          borderRadius: 3, padding: "3px 6px", fontSize: 10, fontFamily: "sans-serif", cursor: "pointer",
-        }}>
-          <option value="ES=F">ES</option>
-          <option value="NQ=F">NQ</option>
-          <option value="CL=F">CL</option>
-          <option value="GC=F">GC</option>
-        </select>
+        {/* Ticker combobox — every Binance trading pair, searchable */}
+        <div style={{ position: "relative" }}>
+          <input
+            value={tickerQuery}
+            onChange={(e) => { setTickerQuery(e.target.value.toUpperCase()); setShowTickerMenu(true); }}
+            onFocus={() => setShowTickerMenu(true)}
+            onBlur={() => setTimeout(() => setShowTickerMenu(false), 150)}
+            placeholder="Search ticker"
+            style={{
+              background: "#0c0c14", border: "1px solid #1a1a2c", color: "#c0c0d8",
+              borderRadius: 3, padding: "3px 8px", fontSize: 10, fontFamily: "monospace",
+              width: 110, outline: "none",
+            }}
+          />
+          {showTickerMenu && filteredSymbols.length > 0 && (
+            <div style={{
+              position: "absolute", top: "100%", left: 0, marginTop: 4, zIndex: 100,
+              background: "#10101a", border: "1px solid #252538", borderRadius: 6,
+              minWidth: 180, maxHeight: 280, overflowY: "auto",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
+            }}>
+              {filteredSymbols.map((s) => (
+                <button
+                  key={s.symbol}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setTicker(s.symbol);
+                    setTickerQuery(s.symbol);
+                    setShowTickerMenu(false);
+                  }}
+                  style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    width: "100%", padding: "6px 10px", background: s.symbol === ticker ? "#152040" : "none",
+                    border: "none", color: "#c0c0d8", fontSize: 11, fontFamily: "monospace",
+                    cursor: "pointer", textAlign: "left",
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = "#1a1a2c"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = s.symbol === ticker ? "#152040" : "transparent"}
+                >
+                  <span style={{ fontWeight: 600 }}>{s.base}<span style={{ color: "#5a5a6c" }}>/{s.quote}</span></span>
+                  <span style={{ color: "#404058", fontSize: 9 }}>{s.symbol}</span>
+                </button>
+              ))}
+              {symbols.length > 0 && filteredSymbols.length === 100 && (
+                <div style={{ padding: "6px 10px", fontSize: 9, color: "#404058", borderTop: "1px solid #252538" }}>
+                  Showing first 100 of {symbols.length} matches — refine search
+                </div>
+              )}
+            </div>
+          )}
+          {symbols.length === 0 && (
+            <span style={{ position: "absolute", top: "100%", left: 0, marginTop: 4, fontSize: 9, color: "#404058" }}>
+              Loading {symbols.length || "all"} pairs…
+            </span>
+          )}
+        </div>
 
         {/* MBO Overlay dropdown */}
         <div style={{ position: "relative" }}>
@@ -1254,5 +1418,6 @@ export default function DataLayer() {
         )}
       </div>
     </div>
+    </DesktopGate>
   );
 }

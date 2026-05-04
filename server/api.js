@@ -423,6 +423,67 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+// --- Download / license verification ---
+//
+// Until Stripe webhooks are wired up, license keys are stored in
+// LICENSE_KEYS (env var, comma-separated `email:KEY` pairs) plus a hard-coded
+// founder/test key. Replace with a database lookup once purchases go live.
+
+const FOUNDER_KEYS = new Set(["DTRN-FOUND-ER01-ADMN"]);
+
+function loadLicensesFromEnv() {
+  const raw = process.env.LICENSE_KEYS || "";
+  const map = new Map(); // email -> Set<key>
+  raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .forEach((pair) => {
+      const [email, key] = pair.split(":");
+      if (!email || !key) return;
+      const e = email.toLowerCase();
+      if (!map.has(e)) map.set(e, new Set());
+      map.get(e).add(key.trim().toUpperCase());
+    });
+  return map;
+}
+
+const RELEASE_TAG = process.env.DATRENA_RELEASE_TAG || "v0.1.0";
+const RELEASE_REPO = process.env.DATRENA_RELEASE_REPO || "datrena/datrena-app";
+
+function downloadUrls() {
+  const base = `https://github.com/${RELEASE_REPO}/releases/download/${RELEASE_TAG}`;
+  return {
+    mac: `${base}/Datrena-${RELEASE_TAG.replace(/^v/, "")}-arm64.dmg`,
+    win: `${base}/Datrena-Setup-${RELEASE_TAG.replace(/^v/, "")}.exe`,
+  };
+}
+
+app.post("/api/download/verify", (req, res) => {
+  const { email, licenseKey } = req.body || {};
+  if (!email || !licenseKey) {
+    return res.status(400).json({ valid: false, error: "Email and license key required" });
+  }
+  const e = String(email).toLowerCase().trim();
+  const k = String(licenseKey).toUpperCase().trim();
+
+  // Founder/admin keys work with any email
+  if (FOUNDER_KEYS.has(k)) {
+    return res.json({ valid: true, downloads: downloadUrls() });
+  }
+
+  const licenses = loadLicensesFromEnv();
+  const userKeys = licenses.get(e);
+  if (userKeys && userKeys.has(k)) {
+    return res.json({ valid: true, downloads: downloadUrls() });
+  }
+
+  return res.status(403).json({
+    valid: false,
+    error: "License key not found for this email. Check your purchase confirmation.",
+  });
+});
+
 app.listen(PORT, () => {
   console.log(`Datrena API running on http://localhost:${PORT}`);
 });
