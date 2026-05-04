@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 const NAV_LINKS = [
   { label: "Features", path: "/Features" },
   { label: "Pricing", path: "/Pricing" },
-  { label: "Forge Labs", path: "/ForgeLabs" },
+  { label: "Connections", path: "/Connections" },
 ];
 
 export default function LandingNav({ activePage }) {

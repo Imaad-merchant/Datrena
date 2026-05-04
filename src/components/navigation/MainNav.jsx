@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator";
 // Quantower-style Control Center sidebar — each icon launches a panel.
 const navItems = [
   { label: "Workspace", icon: Layout, page: "Workspace" },
-  { label: "Connections", icon: Wifi, page: "Connections" },
+  { label: "Connections", icon: Wifi, page: "AppConnections" },
   { label: "Chart", icon: Database, page: "DataLayer" },
   { label: "AI Analysis", icon: Bot, page: "AnalysisLayer" },
   { label: "Backtesting", icon: BarChart3, page: "Backtesting" },

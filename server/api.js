@@ -19,6 +19,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { config } from "dotenv";
 import Stripe from "stripe";
+import { Resend } from "resend";
 
 config();
 
@@ -501,7 +502,56 @@ function saveWaitlist(list) {
   }
 }
 
-app.post("/api/waitlist", (req, res) => {
+// --- Notification helpers ---
+//
+// On every NEW waitlist signup we fire-and-forget two notifications:
+//   1. Slack (if SLACK_WEBHOOK_URL is set) — incoming-webhook style
+//   2. Email via Resend (if RESEND_API_KEY + WAITLIST_NOTIFY_EMAIL are set)
+// Both are optional; if neither env is configured the signup still succeeds.
+
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+
+async function notifyWaitlistSignup(entry, total) {
+  const summary = `🎉 New Datrena waitlist signup — ${entry.email}${
+    entry.referrer ? ` (heard from: ${entry.referrer})` : ""
+  } · total: ${total}`;
+
+  // Slack webhook
+  if (process.env.SLACK_WEBHOOK_URL) {
+    try {
+      await fetch(process.env.SLACK_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: summary }),
+      });
+    } catch (err) {
+      console.warn("Slack notify failed:", err.message);
+    }
+  }
+
+  // Email via Resend
+  if (resend && process.env.WAITLIST_NOTIFY_EMAIL) {
+    try {
+      await resend.emails.send({
+        from: process.env.WAITLIST_FROM_EMAIL || "Datrena <onboarding@resend.dev>",
+        to: process.env.WAITLIST_NOTIFY_EMAIL,
+        subject: `New Datrena waitlist signup — ${entry.email}`,
+        html: `
+          <h2>New waitlist signup</h2>
+          <p><strong>Email:</strong> ${entry.email}</p>
+          <p><strong>Referrer:</strong> ${entry.referrer || "(none)"}</p>
+          <p><strong>Source:</strong> ${entry.source || "unknown"}</p>
+          <p><strong>Signed up:</strong> ${entry.signedUpAt}</p>
+          <p>Total signups so far: <strong>${total}</strong></p>
+        `,
+      });
+    } catch (err) {
+      console.warn("Resend notify failed:", err.message);
+    }
+  }
+}
+
+app.post("/api/waitlist", async (req, res) => {
   const { email, referrer, source } = req.body || {};
   if (!email || !email.includes("@")) {
     return res.status(400).json({ error: "Valid email required" });
@@ -510,17 +560,36 @@ app.post("/api/waitlist", (req, res) => {
   const list = loadWaitlist();
   // Idempotent — same email twice is a no-op
   if (!list.find((x) => x.email === e)) {
-    list.push({
+    const entry = {
       email: e,
       referrer: referrer || null,
       source: source || "unknown",
       ip: req.ip || null,
       signedUpAt: new Date().toISOString(),
-    });
+    };
+    list.push(entry);
     saveWaitlist(list);
     console.log(`Waitlist signup: ${e} (total: ${list.length})`);
+    // Fire-and-forget notifications — don't block the response
+    notifyWaitlistSignup(entry, list.length).catch(() => {});
   }
   res.json({ ok: true });
+});
+
+// Admin-only: list waitlist entries. Auth via Bearer token matching
+// WAITLIST_ADMIN_TOKEN env var. Default token is "datrena-admin" for dev.
+app.get("/api/waitlist/list", (req, res) => {
+  const expected = process.env.WAITLIST_ADMIN_TOKEN || "datrena-admin";
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : auth;
+  if (token !== expected) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const list = loadWaitlist();
+  res.json({
+    count: list.length,
+    entries: list.slice().reverse(), // newest first
+  });
 });
 
 app.get("/api/license/status", (req, res) => {

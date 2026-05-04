@@ -27,6 +27,8 @@ import { LicenseProvider, useLicense } from '@/lib/LicenseContext';
 import { WorkspaceProvider } from '@/lib/WorkspaceContext';
 import Workspace from './pages/Workspace';
 import Connections from './pages/Connections';
+import PublicConnections from './pages/PublicConnections';
+import AdminWaitlist from './pages/AdminWaitlist';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -79,7 +81,11 @@ const AuthenticatedApp = () => {
       <Route path="/Download" element={<Download />} />
       <Route path="/Waitlist" element={<Download />} />
       <Route path="/Workspace" element={<Workspace />} />
-      <Route path="/Connections" element={<Connections />} />
+      {/* Public marketing /Connections page (datrena.com/Connections) */}
+      <Route path="/Connections" element={<PublicConnections />} />
+      {/* In-app data-feed manager — only reachable from inside the desktop app */}
+      <Route path="/AppConnections" element={<Connections />} />
+      {isAuthenticated && <Route path="/Admin/Waitlist" element={<AdminWaitlist />} />}
 
       {/* Authenticated routes — accessible via login OR Shift+Z */}
       {isAuthenticated ? (
