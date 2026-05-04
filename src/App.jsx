@@ -77,6 +77,7 @@ const AuthenticatedApp = () => {
       <Route path="/SignIn" element={<SignIn />} />
       <Route path="/Backtesting" element={<Backtesting />} />
       <Route path="/Download" element={<Download />} />
+      <Route path="/Waitlist" element={<Download />} />
       <Route path="/Workspace" element={<Workspace />} />
       <Route path="/Connections" element={<Connections />} />
 

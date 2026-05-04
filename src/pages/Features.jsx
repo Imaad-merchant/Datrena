@@ -202,7 +202,7 @@ export default function Features() {
           <h2 className="text-xl font-bold mb-2">Start Trading with Better Data</h2>
           <p className="text-gray-400 text-sm mb-6">Free tier available. No credit card required.</p>
           <Button asChild className="bg-white text-black hover:bg-gray-200 text-sm font-semibold gap-2 rounded-lg px-7 h-11">
-            <Link to="/Download">Download Datrena <ArrowRight className="w-4 h-4" /></Link>
+            <Link to="/Waitlist">Join the Waitlist <ArrowRight className="w-4 h-4" /></Link>
           </Button>
         </div>
       </section>

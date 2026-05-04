@@ -2,6 +2,10 @@
 .env
 .env.*
 
+# Waitlist + license storage — contain user emails, never commit
+server/data/waitlist.json
+server/data/licenses.json
+
 # Logs
 logs
 *.log

@@ -91,6 +91,26 @@ function LiveTicker() {
 export default function Landing() {
   return (
     <div className="min-h-screen bg-black flex flex-col text-white">
+      {/* Beta banner — top of every landing view */}
+      <Link
+        to="/Waitlist"
+        className="block bg-amber-950/40 border-b border-amber-900/40 hover:bg-amber-950/60 transition-colors"
+      >
+        <div className="max-w-[1400px] mx-auto px-6 lg:px-16 py-2 flex items-center justify-center gap-2 text-xs text-amber-300">
+          <span className="inline-flex items-center gap-1.5 font-semibold tracking-wide uppercase text-[10px]">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-400"></span>
+            </span>
+            Private beta
+          </span>
+          <span className="text-amber-300/80">
+            Datrena is in development — join the waitlist to get notified at launch
+          </span>
+          <ArrowRight className="w-3 h-3" />
+        </div>
+      </Link>
+
       <LandingNav activePage="/" />
       <LiveTicker />
 
@@ -125,7 +145,7 @@ export default function Landing() {
 
           <div className="flex items-center gap-4">
             <Button asChild className="bg-white text-black hover:bg-gray-200 text-sm font-semibold px-7 h-12 rounded-lg gap-2">
-              <Link to="/Download">Download Datrena <ArrowRight className="w-4 h-4" /></Link>
+              <Link to="/Waitlist">Join the Waitlist <ArrowRight className="w-4 h-4" /></Link>
             </Button>
             <Button variant="outline" asChild className="text-sm text-gray-400 hover:text-white border-gray-700 hover:border-gray-500 px-6 h-12 rounded-lg gap-1">
               <Link to="/Features">View All Features <ChevronRight className="w-4 h-4" /></Link>
@@ -258,7 +278,7 @@ export default function Landing() {
           </p>
           <div className="flex items-center justify-center gap-4">
             <Button asChild className="bg-white text-black hover:bg-gray-200 text-sm font-semibold px-8 h-12 rounded-lg gap-2">
-              <Link to="/Download">Download Datrena <ArrowRight className="w-4 h-4" /></Link>
+              <Link to="/Waitlist">Join the Waitlist <ArrowRight className="w-4 h-4" /></Link>
             </Button>
             <Button variant="outline" asChild className="text-sm text-gray-400 hover:text-white border-gray-700 hover:border-gray-500 px-7 h-12 rounded-lg">
               <Link to="/Pricing">View Pricing</Link>

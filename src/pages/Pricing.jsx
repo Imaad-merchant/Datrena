@@ -71,28 +71,10 @@ export default function Pricing() {
   const checkoutResult = searchParams.get("checkout");
   const purchasedTier = searchParams.get("tier");
 
-  const handleSubscribe = async (targetTier) => {
-    if (targetTier === "free") {
-      window.location.href = "/Download";
-      return;
-    }
-    setLoadingTier(targetTier);
-    setError("");
-    try {
-      const res = await fetch("/api/stripe/create-checkout-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, tier: targetTier }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.url) {
-        throw new Error(data.error || "Could not start checkout");
-      }
-      window.location.href = data.url;
-    } catch (err) {
-      setError(err.message);
-      setLoadingTier(null);
-    }
+  // During beta, every plan CTA routes to the waitlist — no Stripe checkout
+  // is exposed publicly until the platform launches.
+  const handleSubscribe = (_targetTier) => {
+    window.location.href = "/Waitlist";
   };
 
   return (
@@ -183,27 +165,17 @@ export default function Pricing() {
                 </CardContent>
 
                 <CardFooter className="p-6 pt-0">
-                  {isCurrent ? (
-                    <Button disabled variant="outline" className="w-full text-sm rounded-lg border-emerald-800/40 text-emerald-400">
-                      <Check className="w-3.5 h-3.5 mr-2" /> Current plan
-                    </Button>
-                  ) : plan.tierKey === "free" ? (
-                    <Button asChild variant="outline" className="w-full text-sm rounded-lg text-gray-400 border-gray-700 hover:border-gray-500 hover:text-white">
-                      <Link to="/Download">Download Free</Link>
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={() => handleSubscribe(plan.tierKey)}
-                      disabled={isLoading}
-                      className="w-full text-sm rounded-lg bg-white text-black hover:bg-gray-200"
-                    >
-                      {isLoading ? (
-                        <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> Redirecting...</>
-                      ) : (
-                        tierDef.cta
-                      )}
-                    </Button>
-                  )}
+                  <Button
+                    onClick={() => handleSubscribe(plan.tierKey)}
+                    asChild
+                    className={`w-full text-sm rounded-lg ${
+                      plan.badge
+                        ? "bg-white text-black hover:bg-gray-200"
+                        : "bg-zinc-900 text-zinc-300 border border-zinc-700 hover:bg-zinc-800"
+                    }`}
+                  >
+                    <Link to="/Waitlist">Join Waitlist</Link>
+                  </Button>
                 </CardFooter>
               </Card>
             );
@@ -215,11 +187,13 @@ export default function Pricing() {
         )}
 
         <div className="text-center mt-10 space-y-1">
-          <p className="text-xs text-gray-600">
-            All paid plans billed monthly via Stripe. Cancel anytime from inside the app.
+          <p className="text-xs text-amber-500/80">
+            Datrena is in private beta. Pricing is locked in for waitlist members at
+            launch — join now to secure founder rates.
           </p>
           <p className="text-xs text-gray-600">
-            Software is licensed separately from market data. Bring your own feed (Binance, Rithmic, CQG, dxFeed, IQFeed).
+            Software is licensed separately from market data. Bring your own feed
+            (Binance, Rithmic, CQG, dxFeed, IQFeed).
           </p>
         </div>
       </div>

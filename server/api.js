@@ -475,6 +475,54 @@ function tierForEmail(email) {
   return entry.tier || "free";
 }
 
+// --- Waitlist (beta signup) ---
+//
+// Captures emails from datrena.com/Waitlist while we're in private beta.
+// Stored as JSON for now — swap to ConvertKit / Resend / Postgres later.
+
+const WAITLIST_FILE = join(__dirname, "data/waitlist.json");
+
+function loadWaitlist() {
+  try {
+    if (!existsSync(WAITLIST_FILE)) return [];
+    return JSON.parse(readFileSync(WAITLIST_FILE, "utf8"));
+  } catch {
+    return [];
+  }
+}
+
+function saveWaitlist(list) {
+  try {
+    const dir = dirname(WAITLIST_FILE);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(WAITLIST_FILE, JSON.stringify(list, null, 2));
+  } catch (err) {
+    console.error("Failed to save waitlist:", err.message);
+  }
+}
+
+app.post("/api/waitlist", (req, res) => {
+  const { email, referrer, source } = req.body || {};
+  if (!email || !email.includes("@")) {
+    return res.status(400).json({ error: "Valid email required" });
+  }
+  const e = String(email).toLowerCase().trim();
+  const list = loadWaitlist();
+  // Idempotent — same email twice is a no-op
+  if (!list.find((x) => x.email === e)) {
+    list.push({
+      email: e,
+      referrer: referrer || null,
+      source: source || "unknown",
+      ip: req.ip || null,
+      signedUpAt: new Date().toISOString(),
+    });
+    saveWaitlist(list);
+    console.log(`Waitlist signup: ${e} (total: ${list.length})`);
+  }
+  res.json({ ok: true });
+});
+
 app.get("/api/license/status", (req, res) => {
   const email = req.query.email;
   const tier = tierForEmail(email);
