@@ -14,10 +14,11 @@ import cors from "cors";
 import OpenAI from "openai";
 import yahooFinance from "yahoo-finance2";
 import { parquetReadObjects } from "hyparquet";
-import { readFileSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { config } from "dotenv";
+import Stripe from "stripe";
 
 config();
 
@@ -423,66 +424,157 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// --- Download / license verification ---
+// --- License / subscription tier system (Quantower / Sierra-style) ---
 //
-// Until Stripe webhooks are wired up, license keys are stored in
-// LICENSE_KEYS (env var, comma-separated `email:KEY` pairs) plus a hard-coded
-// founder/test key. Replace with a database lookup once purchases go live.
+// Anyone can download Datrena for free. The desktop app calls
+// /api/license/status?email=... on startup. Tier is determined by:
+//   1. FOUNDER_EMAILS env var (comma-separated) — always elite
+//   2. licenses.json file — written by the Stripe webhook on successful payment
+//   3. Default: "free" tier
+//
+// Replace licenses.json with a real DB once volume warrants it.
 
-const FOUNDER_KEYS = new Set(["DTRN-FOUND-ER01-ADMN"]);
-
-function loadLicensesFromEnv() {
-  const raw = process.env.LICENSE_KEYS || "";
-  const map = new Map(); // email -> Set<key>
-  raw
+const LICENSE_FILE = join(__dirname, "data/licenses.json");
+const FOUNDER_EMAILS = new Set(
+  (process.env.FOUNDER_EMAILS || "")
     .split(",")
-    .map((s) => s.trim())
+    .map((s) => s.trim().toLowerCase())
     .filter(Boolean)
-    .forEach((pair) => {
-      const [email, key] = pair.split(":");
-      if (!email || !key) return;
-      const e = email.toLowerCase();
-      if (!map.has(e)) map.set(e, new Set());
-      map.get(e).add(key.trim().toUpperCase());
-    });
-  return map;
+);
+
+function loadLicenses() {
+  try {
+    if (!existsSync(LICENSE_FILE)) return {};
+    return JSON.parse(readFileSync(LICENSE_FILE, "utf8"));
+  } catch {
+    return {};
+  }
 }
 
-const RELEASE_TAG = process.env.DATRENA_RELEASE_TAG || "v0.1.0";
-const RELEASE_REPO = process.env.DATRENA_RELEASE_REPO || "datrena/datrena-app";
-
-function downloadUrls() {
-  const base = `https://github.com/${RELEASE_REPO}/releases/download/${RELEASE_TAG}`;
-  return {
-    mac: `${base}/Datrena-${RELEASE_TAG.replace(/^v/, "")}-arm64.dmg`,
-    win: `${base}/Datrena-Setup-${RELEASE_TAG.replace(/^v/, "")}.exe`,
-  };
+function saveLicenses(map) {
+  try {
+    const dir = dirname(LICENSE_FILE);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(LICENSE_FILE, JSON.stringify(map, null, 2));
+  } catch (err) {
+    console.error("Failed to save licenses:", err.message);
+  }
 }
 
-app.post("/api/download/verify", (req, res) => {
-  const { email, licenseKey } = req.body || {};
-  if (!email || !licenseKey) {
-    return res.status(400).json({ valid: false, error: "Email and license key required" });
+function tierForEmail(email) {
+  const e = String(email || "").toLowerCase().trim();
+  if (!e) return "free";
+  if (FOUNDER_EMAILS.has(e)) return "elite";
+  const licenses = loadLicenses();
+  const entry = licenses[e];
+  if (!entry) return "free";
+  // Honor expiresAt if present (cancelled subscriptions still active until period end)
+  if (entry.expiresAt && new Date(entry.expiresAt).getTime() < Date.now()) {
+    return "free";
   }
-  const e = String(email).toLowerCase().trim();
-  const k = String(licenseKey).toUpperCase().trim();
+  return entry.tier || "free";
+}
 
-  // Founder/admin keys work with any email
-  if (FOUNDER_KEYS.has(k)) {
-    return res.json({ valid: true, downloads: downloadUrls() });
-  }
-
-  const licenses = loadLicensesFromEnv();
-  const userKeys = licenses.get(e);
-  if (userKeys && userKeys.has(k)) {
-    return res.json({ valid: true, downloads: downloadUrls() });
-  }
-
-  return res.status(403).json({
-    valid: false,
-    error: "License key not found for this email. Check your purchase confirmation.",
-  });
+app.get("/api/license/status", (req, res) => {
+  const email = req.query.email;
+  const tier = tierForEmail(email);
+  res.json({ email: email || null, tier });
 });
+
+// --- Stripe Checkout + Webhook ---
+//
+// Pricing page CTAs hit /api/stripe/create-checkout-session with { email, tier }.
+// On checkout.session.completed, the webhook records the user's tier in licenses.json.
+// On customer.subscription.deleted, the user reverts to free at period end.
+
+const stripeKey = process.env.STRIPE_SECRET_KEY;
+const stripe = stripeKey ? new Stripe(stripeKey) : null;
+
+// Map our tier keys to env-configured Stripe Price IDs
+const STRIPE_PRICE_IDS = {
+  pro: process.env.STRIPE_PRICE_PRO || "",
+  elite: process.env.STRIPE_PRICE_ELITE || "",
+};
+
+app.post("/api/stripe/create-checkout-session", async (req, res) => {
+  if (!stripe) {
+    return res.status(501).json({ error: "Stripe not configured on server" });
+  }
+  const { email, tier } = req.body || {};
+  const priceId = STRIPE_PRICE_IDS[tier];
+  if (!priceId) {
+    return res.status(400).json({ error: `No Stripe price configured for tier: ${tier}` });
+  }
+  try {
+    const origin = req.headers.origin || "http://localhost:5173";
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      customer_email: email || undefined,
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: `${origin}/Pricing?checkout=success&tier=${tier}`,
+      cancel_url: `${origin}/Pricing?checkout=cancelled`,
+      metadata: { tier, app: "datrena" },
+    });
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error("Stripe checkout error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Stripe sends raw bodies for webhook signature verification — mount with raw parser.
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  (req, res) => {
+    if (!stripe) return res.status(501).send("Stripe not configured");
+    const sig = req.headers["stripe-signature"];
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    let event;
+    try {
+      event = webhookSecret
+        ? stripe.webhooks.constructEvent(req.body, sig, webhookSecret)
+        : JSON.parse(req.body.toString()); // dev fallback when no secret set
+    } catch (err) {
+      console.error("Webhook signature verification failed:", err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    const licenses = loadLicenses();
+
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object;
+      const email = (session.customer_email || session.customer_details?.email || "").toLowerCase();
+      const tier = session.metadata?.tier;
+      if (email && tier) {
+        licenses[email] = {
+          tier,
+          stripeCustomerId: session.customer,
+          stripeSubscriptionId: session.subscription,
+          activatedAt: new Date().toISOString(),
+          expiresAt: null,
+        };
+        saveLicenses(licenses);
+        console.log(`License activated: ${email} → ${tier}`);
+      }
+    }
+
+    if (event.type === "customer.subscription.deleted") {
+      const sub = event.data.object;
+      // Find the email associated with this subscription
+      const email = Object.keys(licenses).find(
+        (e) => licenses[e]?.stripeSubscriptionId === sub.id
+      );
+      if (email) {
+        licenses[email].expiresAt = new Date(sub.current_period_end * 1000).toISOString();
+        saveLicenses(licenses);
+        console.log(`Subscription cancelled: ${email}, expires ${licenses[email].expiresAt}`);
+      }
+    }
+
+    res.json({ received: true });
+  }
+);
 
 app.listen(PORT, () => {
   console.log(`Datrena API running on http://localhost:${PORT}`);

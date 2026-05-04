@@ -22,6 +22,8 @@ import Checkout from './pages/Checkout';
 import SignIn from './pages/SignIn';
 import Backtesting from './pages/Backtesting';
 import Download from './pages/Download';
+import Activation from './pages/Activation';
+import { LicenseProvider, useLicense } from '@/lib/LicenseContext';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -30,6 +32,15 @@ const MainPage = mainPageKey ? Pages[mainPageKey] : <></>;
 const LayoutWrapper = ({ children, currentPageName }) => Layout ?
   <Layout currentPageName={currentPageName}>{children}</Layout>
   : <>{children}</>;
+
+// Inside Electron, the very first thing the user sees is the Activation screen
+// (email-based sign-in). Once they've signed in, the email persists via
+// localStorage and they go straight to the app on subsequent launches.
+const ElectronGate = ({ children }) => {
+  const { email, isElectron } = useLicense();
+  if (isElectron && !email) return <Activation />;
+  return children;
+};
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, user } = useAuth();
@@ -104,12 +115,16 @@ function App() {
   return (
     <AuthProvider>
       <PlanProvider>
+        <LicenseProvider>
         <QueryClientProvider client={queryClientInstance}>
           <Router>
-            <AuthenticatedApp />
+            <ElectronGate>
+              <AuthenticatedApp />
+            </ElectronGate>
           </Router>
           <Toaster />
         </QueryClientProvider>
+        </LicenseProvider>
       </PlanProvider>
     </AuthProvider>
   )

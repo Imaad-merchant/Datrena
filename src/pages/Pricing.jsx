@@ -1,64 +1,98 @@
-import React, { useState } from "react";
-import { Link } from "react-router-dom";
-import { Check, X, Zap, Shield, Crown } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { Check, X, Zap, Shield, Crown, Loader2, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import LandingNav from "../components/landing/LandingNav";
 import LandingFooter from "../components/landing/LandingFooter";
+import { useLicense } from "../lib/LicenseContext";
+import { TIERS } from "../lib/tiers";
 
 const PLANS = [
   {
-    name: "Free", price: 0, icon: Zap, badge: null,
-    description: "Core tools with Level 2 data access.",
+    tierKey: "free",
+    icon: Zap,
+    badge: null,
+    description: "Try Datrena. Live Binance data, one symbol, basic footprint.",
     features: [
-      { label: "Candlestick Chart (Level 2 data)", included: true },
-      { label: "Prop Firm Tracking", included: true },
-      { label: "Algorithmic Backtesting", included: true },
-      { label: "AI Quant Chat (limited messages)", included: true },
-      { label: "1 Instrument", included: true },
-      { label: "Footprint Chart (Level 3)", included: false },
-      { label: "Delta / Volume Analysis", included: false },
-      { label: "Unlimited AI Messages", included: false },
-      { label: "Multiple Instruments", included: false },
-    ],
-  },
-  {
-    name: "Trader", price: 20, icon: Shield, badge: "Most Popular",
-    description: "Full analytical suite for active traders.",
-    features: [
-      { label: "Real-Time Candlestick Chart", included: true },
-      { label: "Footprint Chart (DOM)", included: true },
-      { label: "Delta / Volume Analysis", included: true },
-      { label: "All Timeframes (1m-30m)", included: true },
-      { label: "Up to 4 Instruments", included: true },
-      { label: "AI Quant Chat", included: true },
-      { label: "Volatility Charting", included: true },
-      { label: "Prop Firm Tracking", included: false },
+      { label: "Footprint chart on BTC/USDT", included: true },
+      { label: "Live Binance level-2 data", included: true },
+      { label: "5 AI quant messages/day", included: true },
+      { label: "1m / 5m / 15m / 1h / D timeframes", included: true },
+      { label: "Multi-symbol charting", included: false },
+      { label: "MBO depth heatmap", included: false },
+      { label: "Iceberg / queue / pull-rate detection", included: false },
       { label: "Backtesting", included: false },
+      { label: "Rithmic / CQG support", included: false },
     ],
   },
   {
-    name: "Pro", price: 40, icon: Crown, badge: "Full Access",
-    description: "Everything, including upcoming features.",
+    tierKey: "pro",
+    icon: Shield,
+    badge: "Most Popular",
+    description: "Every Binance pair, more overlays, real backtesting.",
     features: [
-      { label: "Real-Time Candlestick Chart", included: true },
-      { label: "Footprint Chart (DOM)", included: true },
-      { label: "Delta / Volume Analysis", included: true },
-      { label: "All Timeframes (1m-30m)", included: true },
-      { label: "Unlimited Instruments", included: true },
-      { label: "AI Quant Chat", included: true },
-      { label: "Volatility Charting", included: true },
-      { label: "Prop Firm Tracking", included: true },
-      { label: "Backtesting & Validation", included: true },
+      { label: "Everything in Free", included: true },
+      { label: "All Binance trading pairs", included: true },
+      { label: "All sub-hour timeframes", included: true },
+      { label: "MBO depth heatmap + resting orders", included: true },
+      { label: "100 AI quant messages/day", included: true },
+      { label: "Algorithmic backtesting", included: true },
+      { label: "30-day chart history", included: true },
+      { label: "Iceberg / queue / pull-rate detection", included: false },
+      { label: "Rithmic / CQG support", included: false },
+    ],
+  },
+  {
+    tierKey: "elite",
+    icon: Crown,
+    badge: "Pro Trader",
+    description: "Every premium overlay, every feed, unlimited everything.",
+    features: [
+      { label: "Everything in Pro", included: true },
+      { label: "All MBO overlays — iceberg, queue, pull-rate, tracking", included: true },
+      { label: "Weekly + monthly timeframes", included: true },
+      { label: "Unlimited AI quant messages", included: true },
+      { label: "365-day chart history", included: true },
+      { label: "Rithmic / CQG / dxFeed integration", included: true },
+      { label: "Priority support", included: true },
     ],
   },
 ];
 
 export default function Pricing() {
-  const [selected, setSelected] = useState("Trader");
-  const handleAction = (plan) => {
-    setSelected(plan.name);
+  const { email, tierKey } = useLicense();
+  const [searchParams] = useSearchParams();
+  const [loadingTier, setLoadingTier] = useState(null);
+  const [error, setError] = useState("");
+
+  // Show success banner when returning from Stripe Checkout
+  const checkoutResult = searchParams.get("checkout");
+  const purchasedTier = searchParams.get("tier");
+
+  const handleSubscribe = async (targetTier) => {
+    if (targetTier === "free") {
+      window.location.href = "/Download";
+      return;
+    }
+    setLoadingTier(targetTier);
+    setError("");
+    try {
+      const res = await fetch("/api/stripe/create-checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, tier: targetTier }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || "Could not start checkout");
+      }
+      window.location.href = data.url;
+    } catch (err) {
+      setError(err.message);
+      setLoadingTier(null);
+    }
   };
 
   return (
@@ -66,28 +100,52 @@ export default function Pricing() {
       <LandingNav activePage="/Pricing" />
 
       <div className="max-w-[1400px] mx-auto w-full px-6 lg:px-16 py-12">
+        {checkoutResult === "success" && (
+          <div className="max-w-2xl mx-auto mb-8 bg-emerald-950/30 border border-emerald-900/50 rounded-lg p-4 flex items-center gap-3">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+            <div>
+              <div className="text-sm font-semibold text-emerald-300">
+                You're now on {TIERS[purchasedTier]?.name || "Pro"}
+              </div>
+              <div className="text-xs text-emerald-200/70">
+                Open Datrena and your account will activate automatically.
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="text-center mb-10">
-          <h1 className="text-2xl font-bold mb-2">Pricing</h1>
-          <p className="text-gray-400 text-sm max-w-md mx-auto">
-            Start free. Upgrade when you need real-time data and advanced tools. No hidden fees.
+          <h1 className="text-3xl font-light tracking-tight mb-2">Simple pricing</h1>
+          <p className="text-gray-400 text-sm max-w-lg mx-auto">
+            Free download. Free tier. Upgrade only when you need pro features. Cancel anytime.
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-4xl mx-auto">
           {PLANS.map((plan) => {
             const Icon = plan.icon;
-            const isSelected = selected === plan.name;
+            const tierDef = TIERS[plan.tierKey];
+            const isCurrent = tierKey === plan.tierKey;
+            const isLoading = loadingTier === plan.tierKey;
+
             return (
               <Card
-                key={plan.name}
+                key={plan.tierKey}
                 className={`relative bg-gray-900/40 border-gray-800/40 flex flex-col transition-all ${
-                  isSelected ? "border-gray-600" : ""
+                  isCurrent ? "border-emerald-700/50" : ""
                 }`}
               >
-                {plan.badge && (
+                {plan.badge && !isCurrent && (
                   <div className="absolute -top-2.5 left-1/2 -translate-x-1/2">
                     <Badge className="text-[10px] bg-gray-800 text-gray-300 border-none">
                       {plan.badge}
+                    </Badge>
+                  </div>
+                )}
+                {isCurrent && (
+                  <div className="absolute -top-2.5 left-1/2 -translate-x-1/2">
+                    <Badge className="text-[10px] bg-emerald-900 text-emerald-200 border-none">
+                      Your plan
                     </Badge>
                   </div>
                 )}
@@ -98,7 +156,7 @@ export default function Pricing() {
                       <Icon className="w-4 h-4 text-gray-400" />
                     </div>
                     <div>
-                      <CardTitle className="text-[15px]">{plan.name}</CardTitle>
+                      <CardTitle className="text-[15px]">{tierDef.name}</CardTitle>
                       <CardDescription className="text-xs">{plan.description}</CardDescription>
                     </div>
                   </div>
@@ -106,16 +164,16 @@ export default function Pricing() {
 
                 <CardContent className="p-6 flex-1">
                   <div className="mb-5">
-                    <span className="text-2xl font-bold">{plan.price === 0 ? "Free" : `$${plan.price}`}</span>
-                    {plan.price > 0 && <span className="text-sm text-gray-500">/mo</span>}
+                    <span className="text-2xl font-bold">{tierDef.priceLabel}</span>
+                    {tierDef.interval && <span className="text-sm text-gray-500">/{tierDef.interval}</span>}
                   </div>
 
                   <ul className="space-y-2">
                     {plan.features.map((f, i) => (
-                      <li key={i} className="flex items-center gap-2 text-xs">
+                      <li key={i} className="flex items-start gap-2 text-xs">
                         {f.included
-                          ? <Check className="w-3.5 h-3.5 text-gray-300 shrink-0" />
-                          : <X className="w-3.5 h-3.5 text-gray-700 shrink-0" />}
+                          ? <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                          : <X className="w-3.5 h-3.5 text-gray-700 shrink-0 mt-0.5" />}
                         <span className={f.included ? "text-gray-300" : "text-gray-600"}>
                           {f.label}
                         </span>
@@ -125,28 +183,44 @@ export default function Pricing() {
                 </CardContent>
 
                 <CardFooter className="p-6 pt-0">
-                  <Button
-                    asChild
-                    variant={isSelected ? "default" : "outline"}
-                    className={`w-full text-sm rounded-lg ${
-                      isSelected
-                        ? "bg-white text-black hover:bg-gray-200"
-                        : "text-gray-400 border-gray-700 hover:border-gray-500 hover:text-white"
-                    }`}
-                  >
-                    <Link to="/Download" onClick={() => handleAction(plan)}>
-                      {plan.price === 0 ? "Download Free" : `Get ${plan.name}`}
-                    </Link>
-                  </Button>
+                  {isCurrent ? (
+                    <Button disabled variant="outline" className="w-full text-sm rounded-lg border-emerald-800/40 text-emerald-400">
+                      <Check className="w-3.5 h-3.5 mr-2" /> Current plan
+                    </Button>
+                  ) : plan.tierKey === "free" ? (
+                    <Button asChild variant="outline" className="w-full text-sm rounded-lg text-gray-400 border-gray-700 hover:border-gray-500 hover:text-white">
+                      <Link to="/Download">Download Free</Link>
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() => handleSubscribe(plan.tierKey)}
+                      disabled={isLoading}
+                      className="w-full text-sm rounded-lg bg-white text-black hover:bg-gray-200"
+                    >
+                      {isLoading ? (
+                        <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> Redirecting...</>
+                      ) : (
+                        tierDef.cta
+                      )}
+                    </Button>
+                  )}
                 </CardFooter>
               </Card>
             );
           })}
         </div>
 
-        <div className="text-center mt-8 space-y-1">
-          <p className="text-xs text-gray-600">All paid plans billed monthly. Cancel anytime.</p>
-          <p className="text-xs text-gray-600">Exchange data fees (CME, CBOT, NYMEX, COMEX) may apply separately via Rithmic.</p>
+        {error && (
+          <div className="text-center mt-6 text-xs text-red-400">{error}</div>
+        )}
+
+        <div className="text-center mt-10 space-y-1">
+          <p className="text-xs text-gray-600">
+            All paid plans billed monthly via Stripe. Cancel anytime from inside the app.
+          </p>
+          <p className="text-xs text-gray-600">
+            Software is licensed separately from market data. Bring your own feed (Binance, Rithmic, CQG, dxFeed, IQFeed).
+          </p>
         </div>
       </div>
 
