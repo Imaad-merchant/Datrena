@@ -24,6 +24,9 @@ import Backtesting from './pages/Backtesting';
 import Download from './pages/Download';
 import Activation from './pages/Activation';
 import { LicenseProvider, useLicense } from '@/lib/LicenseContext';
+import { WorkspaceProvider } from '@/lib/WorkspaceContext';
+import Workspace from './pages/Workspace';
+import Connections from './pages/Connections';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -74,11 +77,13 @@ const AuthenticatedApp = () => {
       <Route path="/SignIn" element={<SignIn />} />
       <Route path="/Backtesting" element={<Backtesting />} />
       <Route path="/Download" element={<Download />} />
+      <Route path="/Workspace" element={<Workspace />} />
+      <Route path="/Connections" element={<Connections />} />
 
       {/* Authenticated routes — accessible via login OR Shift+Z */}
       {isAuthenticated ? (
         <>
-          <Route path="/QuantHome" element={<QuantHome />} />
+          <Route path="/QuantHome" element={<Workspace />} />
           <Route path="/Pricing" element={<Pricing />} />
           {Object.entries(Pages).map(([path, Page]) => (
             <Route
@@ -116,6 +121,7 @@ function App() {
     <AuthProvider>
       <PlanProvider>
         <LicenseProvider>
+        <WorkspaceProvider>
         <QueryClientProvider client={queryClientInstance}>
           <Router>
             <ElectronGate>
@@ -124,6 +130,7 @@ function App() {
           </Router>
           <Toaster />
         </QueryClientProvider>
+        </WorkspaceProvider>
         </LicenseProvider>
       </PlanProvider>
     </AuthProvider>

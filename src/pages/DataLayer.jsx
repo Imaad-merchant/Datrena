@@ -3,6 +3,7 @@ import { RefreshCw, Wifi, WifiOff, ChevronsRight, ChevronDown, Layers, Eye, EyeO
 import MainNav from "../components/navigation/MainNav";
 import DesktopGate from "../components/DesktopGate";
 import { useLicense } from "../lib/LicenseContext";
+import { useWorkspace } from "../lib/WorkspaceContext";
 import { TIERS } from "../lib/tiers";
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -169,9 +170,13 @@ const OVERLAY_DEFS = [
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function DataLayer() {
   const { features: planFeatures, tier: userTier } = useLicense();
+  const { symbol: ctxSymbol, setSymbol: setCtxSymbol } = useWorkspace();
 
   const [status,    setStatus]    = useState("disconnected");
-  const [ticker,    setTicker]    = useState("BTCUSDT");
+  // Symbol is sourced from WorkspaceContext so it stays linked to the Watchlist panel.
+  // Local setTicker writes back to context so other panels see the change.
+  const ticker = ctxSymbol;
+  const setTicker = setCtxSymbol;
   const [timeframe, setTimeframe] = useState("5m");
   const [symbols,   setSymbols]   = useState([]); // all Binance USDT pairs
   const [tickerQuery, setTickerQuery] = useState("BTCUSDT");

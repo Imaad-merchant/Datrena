@@ -70,7 +70,11 @@ export function LicenseProvider({ children }) {
     features: tier.features,
     status,
     error,
-    isElectron: typeof window !== "undefined" && window.datrena?.isElectron === true,
+    isElectron:
+      typeof window !== "undefined" &&
+      (window.datrena?.isElectron === true ||
+        // Dev override for browser preview testing only
+        new URLSearchParams(window.location.search).get("desktop") === "1"),
     signIn,
     signOut,
     refreshTier: () => refreshTier(email),

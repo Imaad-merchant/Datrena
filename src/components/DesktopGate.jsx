@@ -10,8 +10,12 @@ import { Apple, Monitor, Download, Rocket } from "lucide-react";
 export default function DesktopGate({ children, title = "Datrena Charting" }) {
   const isElectron =
     typeof window !== "undefined" && window.datrena?.isElectron === true;
+  // Dev override: append ?desktop=1 to the URL to preview desktop-only screens in the browser
+  const devOverride =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("desktop") === "1";
 
-  if (isElectron) return <>{children}</>;
+  if (isElectron || devOverride) return <>{children}</>;
 
   // Build deep-link to open the desktop app if installed (custom protocol: datrena://)
   const launchUrl = "datrena://open" + (typeof window !== "undefined" ? window.location.pathname : "");

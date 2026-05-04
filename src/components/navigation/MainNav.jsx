@@ -2,16 +2,20 @@ import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { useSecretAccess } from "@/hooks/useSecretAccess";
-import { Database, Bot, BarChart3, FlaskConical, Home, LogOut } from "lucide-react";
+import { Database, Bot, BarChart3, FlaskConical, Home, LogOut, Layout, Wifi, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 
+// Quantower-style Control Center sidebar — each icon launches a panel.
 const navItems = [
-  { label: "Data", icon: Database, page: "DataLayer" },
+  { label: "Workspace", icon: Layout, page: "Workspace" },
+  { label: "Connections", icon: Wifi, page: "Connections" },
+  { label: "Chart", icon: Database, page: "DataLayer" },
   { label: "AI Analysis", icon: Bot, page: "AnalysisLayer" },
   { label: "Backtesting", icon: BarChart3, page: "Backtesting" },
   { label: "Research", icon: FlaskConical, page: "ValidationLayer" },
+  { label: "Pricing", icon: ShoppingBag, page: "Pricing" },
 ];
 
 export default function MainNav() {
