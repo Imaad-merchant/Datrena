@@ -1,22 +1,17 @@
 import React from "react";
 import {
-  Database, FlaskConical, BarChart3,
-  BarChart2, Activity, LineChart, PieChart,
-  Shuffle, Layers, Eye, Crosshair, Clock,
-  Target, Cpu, SlidersHorizontal, TrendingUp, Shield,
+  Database, BarChart2, Activity, Layers, Eye, Crosshair, Clock,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 
 const TABS_DATA = [
   { key: "data", label: "Data", icon: Database },
-  { key: "research", label: "Research", icon: FlaskConical },
-  { key: "backtesting", label: "Backtesting", icon: BarChart3 },
 ];
 
 const TAB_CONTENT = {
   data: {
-    description: "Stream real-time MBO Level 3 data from Rithmic and visualize every order event in the exchange's matching engine. 7+ toggleable overlays built for professional futures traders.",
+    description: "Stream real-time MBO Level 3 data and visualize every order event in the exchange's matching engine. 7+ toggleable overlays built for professional futures and crypto traders.",
     features: [
       { icon: BarChart2, title: "Order Flow Footprint Chart", description: "Canvas-based footprint chart rendering bid/ask volume at every price level. Imbalance detection (3:1 ratio), Point of Control, session volume profile." },
       { icon: Layers, title: "DOM Depth Heatmap Overlay", description: "Real-time depth of market visualization overlaid on the chart background. Color-coded intensity shows resting liquidity concentration." },
@@ -24,28 +19,6 @@ const TAB_CONTENT = {
       { icon: Crosshair, title: "Live Order Tracking", description: "Visualize every order event on the chart — adds, cancels, modifies, and fills." },
       { icon: Clock, title: "Pull Rate Analysis", description: "Track how often resting orders are pulled vs. filled. High rates indicate potential spoofing." },
       { icon: Activity, title: "Delta & Volume Analysis", description: "Per-candle delta, cumulative delta, and total volume summaries. See whether buyers or sellers are driving each move." },
-    ],
-  },
-  research: {
-    description: "Cloud-based research terminals attached to terabytes of financial, fundamental, and alternative data — preformatted and ready to use. Access popular ML and feature selection libraries to quantify factor importance.",
-    features: [
-      { icon: Cpu, title: "Train Machine Learning Models", description: "Build and train ML models on historical market data. Use popular libraries like scikit-learn, XGBoost, and TensorFlow to identify predictive features." },
-      { icon: LineChart, title: "Visualize and Explore Data", description: "Interactive data exploration tools for OHLCVD market data. Surface correlations, distributions, and behavioral patterns across instruments." },
-      { icon: PieChart, title: "AI Quant Analysis", description: "Deep quantitative analysis powered by AI. Ask natural-language questions about your data and get statistically rigorous answers." },
-      { icon: SlidersHorizontal, title: "Factor Importance", description: "Quantify which features matter most using feature selection libraries. Identify the variables that actually drive your strategy's edge." },
-      { icon: Shuffle, title: "Combinatorial Analysis", description: "Discover statistically significant sequences of market events. Uncover non-obvious edge patterns across instruments and timeframes." },
-      { icon: Target, title: "Fast Cloud Cores", description: "Run compute-intensive research on scalable cloud infrastructure. Complete weeks of analysis in minutes." },
-    ],
-  },
-  backtesting: {
-    description: "Move from research to point-in-time, fee, slippage, and spread-adjusted backtesting with minimal code changes. Perform multi-asset backtesting with realistic margin modeling.",
-    features: [
-      { icon: BarChart3, title: "Algorithmic Backtesting", description: "Test strategies against historical data with tick-level accuracy. Fee, slippage, and spread adjustments ensure realistic results." },
-      { icon: TrendingUp, title: "Walk-Forward Analysis", description: "Re-optimize on rolling windows and validate on unseen data to avoid overfitting and ensure out-of-sample performance." },
-      { icon: SlidersHorizontal, title: "Parameter Optimization", description: "Run thousands of full backtests on scalable cloud compute. Visualize parameter sensitivity on heatmaps to find robust configurations." },
-      { icon: Shuffle, title: "Monte Carlo Simulation", description: "Run thousands of simulated trade sequences to understand probability distributions and worst-case scenarios." },
-      { icon: Shield, title: "Risk-Adjusted Metrics", description: "Sharpe, Sortino, Calmar, and other risk-adjusted performance measures. Understand your strategy's risk profile before going live." },
-      { icon: Cpu, title: "Agentic AI", description: "Use an AI assistant to design, backtest, optimize, and deploy your quantitative strategies through a streamlined workflow." },
     ],
   },
 };
