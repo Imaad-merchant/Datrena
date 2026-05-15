@@ -1390,17 +1390,40 @@ export default function DataLayer() {
     let ws, timer, abort = false;
     const sym = ticker.toLowerCase();
 
-    // 1) Backfill OHLC history from REST klines (1m, latest 500 bars)
+    // 1) Backfill OHLC history from REST klines — paginated backward.
+    // Binance caps each request at 1000 bars, so we walk back PAGES × 1000
+    // candles at 1m resolution. 30 pages × 1000 = 30k 1m bars ≈ 21 days of
+    // history (rebuckets to whatever timeframe the user is on).
     (async () => {
       try {
-        const res = await fetch(
-          `${BINANCE_REST_BASE}/klines?symbol=${ticker}&interval=1m&limit=500`
-        );
-        if (!res.ok) throw new Error(`klines ${res.status}`);
-        const klines = await res.json();
+        const PER_PAGE = 1000;
+        const PAGES = 30;
+        const allChunks = [];
+        let endTime = Date.now();
+        logMsgRef.current?.("info", `Loading ${PAGES * PER_PAGE} bars of history…`);
+
+        for (let i = 0; i < PAGES; i++) {
+          if (abort) return;
+          const url = `${BINANCE_REST_BASE}/klines?symbol=${ticker}&interval=1m&limit=${PER_PAGE}&endTime=${endTime}`;
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`klines page ${i + 1} → ${res.status}`);
+          const chunk = await res.json();
+          if (chunk.length === 0) break; // reached the start of available data
+          allChunks.push(chunk);
+          // Next page ends just before this chunk's oldest bar
+          endTime = chunk[0][0] - 1;
+          // Render progress to the user (every 5 pages, or last)
+          if ((i + 1) % 5 === 0 || i === PAGES - 1) {
+            logMsgRef.current?.("info", `History: ${allChunks.reduce((s, c) => s + c.length, 0)} bars loaded`);
+          }
+        }
         if (abort) return;
 
-        // Derive tick size from the most recent close (1/1000th of price, snapped to 1-2-5)
+        // Newest chunks were appended first; reverse + flatten → oldest first
+        const klines = allChunks.reverse().flat();
+        logMsgRef.current?.("info", `History complete: ${klines.length} bars (~${Math.round(klines.length / 1440 * 10) / 10} days of 1m)`);
+
+        // Derive tick size from the most recent close
         const lastClose = klines.length ? parseFloat(klines[klines.length - 1][4]) : 0;
         TICK = autoTick(lastClose);
         // Binance kline: [openTime, open, high, low, close, volume, closeTime, ...]
@@ -1425,6 +1448,7 @@ export default function DataLayer() {
         scheduleDraw();
       } catch (err) {
         // History fetch failed — leave demo data in place
+        logMsgRef.current?.("error", `History fetch failed: ${err.message}`);
         console.warn("Binance klines fetch failed:", err.message);
       }
     })();
