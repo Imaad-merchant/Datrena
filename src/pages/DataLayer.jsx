@@ -260,6 +260,17 @@ export default function DataLayer() {
   const historyRef       = useRef([]);
   const rawTradesRef     = useRef([]);
   const bookRef          = useRef({ bids: [], asks: [] });
+  // Full local order book — maintained from the L3 diff stream
+  // (@depth@100ms) after a REST snapshot sync per Binance's spec.
+  const fullBookRef      = useRef({
+    bids: new Map(),     // price → qty
+    asks: new Map(),
+    synced: false,
+    buffer: [],          // events received before snapshot completes
+    lastUpdateId: 0,
+    bookLevel: "L2",     // "L2" until full sync; "L3" once synced
+  });
+  const [bookLevel, setBookLevel] = useState("L2"); // for display
   const orderEventsRef   = useRef([]);
   const icebergAlertsRef = useRef([]);
   const pullRateRef      = useRef({});
@@ -1259,19 +1270,91 @@ export default function DataLayer() {
       }
     })();
 
+    // ── L3 order-book sync helpers ─────────────────────────────────
+    // Apply a single Binance depth diff event to the local full book.
+    const applyDepthEvent = (evt) => {
+      const book = fullBookRef.current;
+      (evt.b || []).forEach(([p, q]) => {
+        const price = parseFloat(p);
+        const qty = parseFloat(q);
+        if (qty === 0) book.bids.delete(price);
+        else book.bids.set(price, qty);
+      });
+      (evt.a || []).forEach(([p, q]) => {
+        const price = parseFloat(p);
+        const qty = parseFloat(q);
+        if (qty === 0) book.asks.delete(price);
+        else book.asks.set(price, qty);
+      });
+      book.lastUpdateId = evt.u;
+    };
+
+    // Project the full local book onto bookRef for canvas rendering.
+    // For perf we cap each side at the top ~200 levels around the spread.
+    const updateDisplayBook = () => {
+      const book = fullBookRef.current;
+      const bids = Array.from(book.bids.entries()).sort((a, b) => b[0] - a[0]).slice(0, 200);
+      const asks = Array.from(book.asks.entries()).sort((a, b) => a[0] - b[0]).slice(0, 200);
+      bookRef.current = {
+        bids: bids.map(([price, size]) => ({ price, size, orderCount: 0 })),
+        asks: asks.map(([price, size]) => ({ price, size, orderCount: 0 })),
+      };
+      scheduleDraw();
+    };
+
+    // Fetch the REST depth snapshot and replay buffered events that came
+    // after it. Sets the book to "L3" once synced.
+    const syncOrderBook = async () => {
+      try {
+        const res = await fetch(`${BINANCE_REST_BASE}/depth?symbol=${ticker}&limit=5000`);
+        if (!res.ok) throw new Error(`depth ${res.status}`);
+        const snap = await res.json();
+        if (abort) return;
+        const book = fullBookRef.current;
+        book.bids.clear();
+        book.asks.clear();
+        snap.bids.forEach(([p, q]) => book.bids.set(parseFloat(p), parseFloat(q)));
+        snap.asks.forEach(([p, q]) => book.asks.set(parseFloat(p), parseFloat(q)));
+        book.lastUpdateId = snap.lastUpdateId;
+
+        // Drop buffered events that pre-date the snapshot
+        const valid = book.buffer.filter((evt) => evt.u > snap.lastUpdateId);
+        book.buffer = [];
+        valid.forEach(applyDepthEvent);
+
+        book.synced = true;
+        book.bookLevel = "L3";
+        setBookLevel("L3");
+        updateDisplayBook();
+        logMsgRef.current?.("info", `L3 book synced: ${book.bids.size} bids · ${book.asks.size} asks · updateId ${snap.lastUpdateId}`);
+      } catch (err) {
+        logMsgRef.current?.("error", `Depth snapshot failed: ${err.message}`);
+      }
+    };
+
     function connect() {
       if (pausedRef.current) {
         setStatus("disconnected");
         return;
       }
-      // Combined stream: trades + depth (top 20 levels, 100ms diff cadence)
-      const streams = [`${sym}@trade`, `${sym}@depth20@100ms`].join("/");
+      // Reset book sync state for the new connection
+      fullBookRef.current = {
+        bids: new Map(), asks: new Map(),
+        synced: false, buffer: [], lastUpdateId: 0, bookLevel: "L2",
+      };
+      setBookLevel("L2");
+
+      // Combined stream: aggregated trades + FULL depth diff (100ms cadence)
+      const streams = [`${sym}@trade`, `${sym}@depth@100ms`].join("/");
       ws = new WebSocket(`${BINANCE_WS_BASE}${streams}`);
 
       ws.onopen = () => {
         setStatus("connected");
         setDataMode("live");
-        logMsgRef.current?.("info", `WS connected: ${sym}@trade + ${sym}@depth20`);
+        logMsgRef.current?.("info", `WS connected: ${sym}@trade + ${sym}@depth (L3 full book)`);
+        // Per Binance spec: subscribe FIRST, then fetch snapshot, then drop
+        // events older than the snapshot's lastUpdateId.
+        syncOrderBook();
       };
       ws.onerror = () => {
         setStatus("error");
@@ -1325,13 +1408,31 @@ export default function DataLayer() {
             return;
           }
 
+          if (stream.endsWith("@depth@100ms")) {
+            // L3 full-depth diff: { U, u, b: [[price, qty]], a: [[price, qty]] }
+            // U = first update ID in event, u = final update ID.
+            // Pre-snapshot events get buffered; post-snapshot get applied.
+            const book = fullBookRef.current;
+            if (!book.synced) {
+              book.buffer.push(data);
+              if (book.buffer.length > 500) book.buffer = book.buffer.slice(-400);
+            } else {
+              // Skip events already covered by the snapshot
+              if (data.u > book.lastUpdateId) {
+                applyDepthEvent(data);
+                updateDisplayBook();
+              }
+            }
+            return;
+          }
+
+          // (legacy L2 stream — no longer subscribed but kept for safety)
           if (stream.endsWith("@depth20@100ms")) {
-            // Binance depth20: { bids: [[price, qty], ...], asks: [[price, qty], ...] }
             bookRef.current = {
               bids: (data.bids || []).map(([p, q]) => ({
                 price: parseFloat(p),
                 size: parseFloat(q),
-                orderCount: 0, // L2 only — Binance doesn't expose order counts
+                orderCount: 0,
               })),
               asks: (data.asks || []).map(([p, q]) => ({
                 price: parseFloat(p),
@@ -1699,6 +1800,10 @@ export default function DataLayer() {
         <span>Workspace: <span style={{ color: "#c0c0d0" }}>default</span></span>
         <span style={{ color: "#5a5a70" }}>·</span>
         <span>Feed: <span style={{ color: "#c0c0d0" }}>Binance Spot</span></span>
+        <span style={{ color: "#5a5a70" }}>·</span>
+        <span>Book: <span style={{
+          color: bookLevel === "L3" ? "#5ee07a" : "#f59e0b", fontWeight: 700,
+        }}>{bookLevel === "L3" ? "L3 · full depth" : "L2 · syncing…"}</span></span>
         <span style={{ marginLeft: "auto", color: "#888" }}>
           {now.toLocaleString(undefined, { dateStyle: "short", timeStyle: "medium" })}
         </span>
@@ -2260,6 +2365,15 @@ export default function DataLayer() {
         <span>Trades: <span style={{ color: "#aaa" }}>{rawTradesRef.current?.length || 0}</span></span>
         <span>·</span>
         <span>Tick: <span style={{ color: "#aaa" }}>{TICK}</span></span>
+        <span>·</span>
+        <span>
+          Book: <span style={{ color: bookLevel === "L3" ? "#5ee07a" : "#888" }}>
+            {bookLevel}
+          </span>
+          <span style={{ color: "#666", marginLeft: 4 }}>
+            ({fullBookRef.current?.bids?.size || 0} / {fullBookRef.current?.asks?.size || 0})
+          </span>
+        </span>
         <span style={{ marginLeft: "auto" }}>
           Next candle: <span style={{ color: "#60a5fa", fontWeight: 600 }}>{countdown}</span>
         </span>
