@@ -1,7 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import {
-  Database, Bot, BarChart3, FlaskConical, ArrowRight,
+  Database, ArrowRight,
   Wifi, ChevronRight, Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,15 +17,6 @@ const PRODUCTS = [
   { title: "Data", icon: Database, status: "Live", anchor: "/Features#data",
     description: "Real-time MBO Level 3 order flow visualization. Footprint charts, DOM heatmaps, iceberg detection, and pull rate analysis.",
     tags: ["Footprint", "DOM Heatmap", "Iceberg", "Order Tracking", "Pull Rate", "Delta/Volume"] },
-  { title: "AI Analysis", icon: Bot, status: "Beta", anchor: "/Features#ai-analysis",
-    description: "AI-powered quantitative analysis on Rithmic market data. Ask about volatility, order flow, market structure, and strategy ideas.",
-    tags: ["AI Chat", "Volatility", "Order Flow", "Strategy Ideas"] },
-  { title: "Backtesting", icon: BarChart3, status: null, anchor: "/Features#backtesting",
-    description: "Chart-based strategy backtesting with the same footprint chart as Data. Replay historical data, test strategies, and analyze results.",
-    tags: ["Chart Replay", "Strategy Runner", "Trade Log", "Performance Metrics"] },
-  { title: "Research", icon: FlaskConical, status: null, anchor: "/Features#research",
-    description: "Cloud-based research terminals with terabytes of financial and alternative data. Train ML models, run parameter optimization, and explore data.",
-    tags: ["ML Models", "Parameter Optimization", "Monte Carlo", "Data Explorer"] },
 ];
 
 const STATS = [
@@ -42,22 +33,19 @@ const COMPARISON = [
   { feature: "Footprint Charts", datrena: true, tradingview: false, ninjatrader: true },
   { feature: "DOM Heatmap", datrena: true, tradingview: false, ninjatrader: true },
   { feature: "Iceberg Detection", datrena: true, tradingview: false, ninjatrader: false },
-  { feature: "AI Quant Analysis", datrena: true, tradingview: false, ninjatrader: false },
-  { feature: "Chart-Based Backtesting", datrena: true, tradingview: true, ninjatrader: true },
-  { feature: "Cloud Research Terminals", datrena: true, tradingview: false, ninjatrader: false },
-  { feature: "ML Model Training", datrena: true, tradingview: false, ninjatrader: false },
-  { feature: "Parameter Optimization", datrena: true, tradingview: false, ninjatrader: false },
+  { feature: "Order Flow Imbalance", datrena: true, tradingview: false, ninjatrader: false },
+  { feature: "Pull Rate Analysis", datrena: true, tradingview: false, ninjatrader: false },
+  { feature: "Volume Profile / POC", datrena: true, tradingview: true, ninjatrader: true },
   { feature: "Web-Based (No Install)", datrena: true, tradingview: true, ninjatrader: false },
   { feature: "Free Tier", datrena: true, tradingview: true, ninjatrader: false },
 ];
 
 const FAQ = [
-  { q: "What data feed does Datrena use?", a: "Datrena connects to Rithmic's MBO (Market by Order) Level 3 feed, which provides individual order events directly from CME Group's matching engine. This is the same feed used by institutional desks." },
-  { q: "Can I write and backtest my own algorithms?", a: "Yes. The Research terminal lets you write quantitative strategies in a cloud-based environment with access to historical and alternative data. Move from research to backtesting with minimal code changes." },
-  { q: "What machine learning libraries are supported?", a: "We support popular ML and feature selection libraries out of the box. Custom package installation is available on request for Pro users." },
-  { q: "Does it work on Mac / Linux?", a: "Yes. Datrena is a fully web-based platform — no desktop installation required. Works on any modern browser across macOS, Windows, and Linux." },
-  { q: "What are the exchange data costs?", a: "Exchange data fees (CME, CBOT, NYMEX, COMEX) are billed separately through Rithmic and depend on your subscription type. Datrena's platform fees are independent of data costs." },
-  { q: "How realistic is the backtesting?", a: "Backtests are point-in-time with fee, slippage, and spread adjustments. Multi-asset portfolio backtesting with realistic margin modeling avoids common pitfalls like look-ahead bias." },
+  { q: "What data feed does Datrena use?", a: "Datrena is launching with live Binance order flow for crypto. Connections to Rithmic, CQG, dxFeed, IQFeed, and other professional feeds are on the roadmap." },
+  { q: "What kind of charts does Datrena offer?", a: "A footprint chart with bid/ask volume per cell, volume profile with POC, DOM depth heatmap, iceberg detection, pull rate analysis, and order flow imbalance overlays." },
+  { q: "Does it work on Mac / Linux / Windows?", a: "Yes. Datrena runs entirely in the browser — no desktop installation required. Works on any modern browser across macOS, Windows, and Linux." },
+  { q: "Do I need to pay for market data?", a: "For Binance, no — the public feed is free. For professional futures or stock data (Rithmic, CME, etc.) exchange fees are billed separately by the provider, not by Datrena." },
+  { q: "Can I bring my own data feed?", a: "That's the model. Datrena is platform-neutral software — your data subscription stays with your provider. We just give you the analytics layer." },
 ];
 
 const TICKER_ITEMS = [
@@ -123,18 +111,19 @@ export default function Landing() {
           </div>
 
           <h1 className="text-4xl lg:text-[3.25rem] font-extrabold text-white leading-[1.1] mb-6 tracking-tight">
-            Quantitative Trading<br />Research Platform
+            Live Order Flow<br />Footprint Charting
           </h1>
           <p className="text-gray-400 text-[15px] mb-8 max-w-lg leading-relaxed">
-            Live Level 3 market data, cloud research terminals, and institutional-grade backtesting. From raw order flow to validated strategies — all in one platform.
+            Institutional-grade footprint charts on live exchange data. See the bid-ask
+            tape per price level, spot icebergs, and read the order book like the pros.
           </p>
 
           <ul className="space-y-2.5 mb-10">
             {[
               "Real-Time MBO Level 3 Order Flow",
-              "AI-Powered Quantitative Analysis",
-              "Chart-Based Strategy Backtesting",
-              "Cloud Research Terminals with ML",
+              "Footprint Chart with Bid/Ask Per Cell",
+              "DOM Depth Heatmap + Iceberg Detection",
+              "Volume Profile, POC, Pull Rate Analysis",
             ].map(label => (
               <li key={label} className="flex items-center gap-3 text-[13px]">
                 <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-gray-500" />

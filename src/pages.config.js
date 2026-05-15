@@ -51,8 +51,6 @@ import FootprintChart from './pages/FootprintChart';
 import Terminal from './pages/Terminal';
 import Home from './pages/Home';
 import DataLayer from './pages/DataLayer';
-import AnalysisLayer from './pages/AnalysisLayer';
-import ValidationLayer from './pages/ValidationLayer';
 
 import __Layout from './Layout.jsx';
 
@@ -62,9 +60,6 @@ export const PAGES = {
     "Terminal": Terminal,
     "Home": Home,
     "DataLayer": DataLayer,
-    "AnalysisLayer": AnalysisLayer,
-    "ValidationLayer": ValidationLayer,
-
 }
 
 export const pagesConfig = {

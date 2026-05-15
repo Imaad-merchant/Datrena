@@ -2,16 +2,13 @@ import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { useSecretAccess } from "@/hooks/useSecretAccess";
-import { Database, Bot, BarChart3, FlaskConical, Home, LogOut } from "lucide-react";
+import { Database, Home, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 
 const navItems = [
   { label: "Chart", icon: Database, page: "DataLayer" },
-  { label: "AI Analysis", icon: Bot, page: "AnalysisLayer" },
-  { label: "Backtesting", icon: BarChart3, page: "Backtesting" },
-  { label: "Research", icon: FlaskConical, page: "ValidationLayer" },
 ];
 
 export default function MainNav() {

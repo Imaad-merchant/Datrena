@@ -14,7 +14,6 @@ import ForgeLabs from './pages/ForgeLabs';
 import GithubPRs from './pages/GithubPRs';
 import DataLayer from './pages/DataLayer';
 import Checkout from './pages/Checkout';
-import Backtesting from './pages/Backtesting';
 import Download from './pages/Download';
 import AdminWaitlist from './pages/AdminWaitlist';
 
@@ -54,7 +53,6 @@ const AuthenticatedApp = () => {
         <>
           <Route path="/DataLayer" element={<DataLayer />} />
           <Route path="/QuantHome" element={<Navigate to="/DataLayer" replace />} />
-          <Route path="/Backtesting" element={<Backtesting />} />
           <Route path="/Admin/Waitlist" element={<AdminWaitlist />} />
         </>
       ) : (
