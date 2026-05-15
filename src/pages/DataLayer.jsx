@@ -190,6 +190,7 @@ export default function DataLayer() {
   const drawingInProgress = useRef(null); // { type, points: [...] } while user is creating
   const drawingsRef = useRef(drawings);
   useEffect(() => { drawingsRef.current = drawings; }, [drawings]);
+  const selectedDrawingIdRef = useRef(null);
   useEffect(() => {
     try { localStorage.setItem("datrena_drawings", JSON.stringify(drawings)); } catch {}
   }, [drawings]);
@@ -203,6 +204,12 @@ export default function DataLayer() {
   const [showWorkspaceSave, setShowWorkspaceSave] = useState(false);
   const [showWorkspaceOpen, setShowWorkspaceOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
+  // Selected drawing (for delete) + canvas right-click context menu
+  const [selectedDrawingId, setSelectedDrawingId] = useState(null);
+  useEffect(() => { selectedDrawingIdRef.current = selectedDrawingId; }, [selectedDrawingId]);
+  const [ctxMenu, setCtxMenu] = useState(null); // { screenX, screenY, price, bucket } | null
 
   // Saved workspaces
   const [savedWorkspaces, setSavedWorkspaces] = useState(() => {
@@ -302,19 +309,88 @@ export default function DataLayer() {
     return () => document.removeEventListener("mousedown", close);
   }, [openMenu]);
 
-  // Escape exits drawing mode + closes modals
+  // Global keyboard shortcuts — Sierra-style power-user bindings
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key !== "Escape") return;
-      if (drawingInProgress.current) drawingInProgress.current = null;
-      setDrawMode("pointer");
-      setShowValuesWin(false);
-      setShowMsgLog(false);
-      setShowReplay(false);
-      setShowWorkspaceSave(false);
-      setShowWorkspaceOpen(false);
-      setShowAbout(false);
-      setOpenMenu(null);
+      // Always ignore shortcuts while the user is typing in a field
+      const tag = (e.target?.tagName || "").toLowerCase();
+      const typing = tag === "input" || tag === "textarea" || e.target?.isContentEditable;
+
+      // ESC works even in fields — closes drawing mode + modals
+      if (e.key === "Escape") {
+        if (drawingInProgress.current) drawingInProgress.current = null;
+        setDrawMode("pointer");
+        setShowValuesWin(false);
+        setShowMsgLog(false);
+        setShowReplay(false);
+        setShowWorkspaceSave(false);
+        setShowWorkspaceOpen(false);
+        setShowAbout(false);
+        setShowShortcuts(false);
+        setOpenMenu(null);
+        setCtxMenu(null);
+        setSelectedDrawingId(null);
+        return;
+      }
+
+      if (typing) return;
+
+      const meta = e.metaKey || e.ctrlKey;
+
+      // Ctrl/Cmd-modified shortcuts
+      if (meta && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        setShowWorkspaceSave(true);
+        return;
+      }
+      if (meta && e.key.toLowerCase() === "o") {
+        e.preventDefault();
+        setShowWorkspaceOpen(true);
+        return;
+      }
+      if (meta && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        // Undo: remove the most-recently-added drawing
+        setDrawings((prev) => {
+          if (prev.length === 0) return prev;
+          const removed = prev[prev.length - 1];
+          logMsgRef.current?.("info", `Undid drawing: ${removed.type}`);
+          return prev.slice(0, -1);
+        });
+        return;
+      }
+
+      // Delete: remove selected drawing (read from ref to avoid TDZ in deps)
+      const selId = selectedDrawingIdRef.current;
+      if ((e.key === "Delete" || e.key === "Backspace") && selId != null) {
+        e.preventDefault();
+        setDrawings((prev) => prev.filter((d) => d.id !== selId));
+        setSelectedDrawingId(null);
+        logMsgRef.current?.("info", `Drawing deleted`);
+        return;
+      }
+
+      // Single-key tool shortcuts (lowercase letters)
+      switch (e.key.toLowerCase()) {
+        case "v": setDrawMode("pointer"); return;
+        case "l": setDrawMode("trendline"); return;
+        case "h": setDrawMode("hline"); return;
+        case "t": setDrawMode("text"); return;
+        case "/": e.preventDefault(); document.querySelector("[data-ticker-input]")?.focus(); return;
+        case "f":
+          if (e.key === "F11" || e.shiftKey === false) {
+            // 'f' alone — toggle fullscreen
+            if (document.fullscreenElement) document.exitFullscreen?.();
+            else document.documentElement.requestFullscreen?.();
+          }
+          return;
+        default: break;
+      }
+      if (e.key === "F11") {
+        e.preventDefault();
+        if (document.fullscreenElement) document.exitFullscreen?.();
+        else document.documentElement.requestFullscreen?.();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -730,10 +806,12 @@ export default function DataLayer() {
         if (i < 0) return null;
         return VOL_W + i * cW - v.scrollX + cW / 2;
       };
+      const selId = selectedDrawingIdRef.current;
       userDrawings.forEach((d) => {
-        ctx.strokeStyle = d.color || "#f59e0b";
-        ctx.fillStyle = d.color || "#f59e0b";
-        ctx.lineWidth = 1.5;
+        const selected = d.id === selId;
+        ctx.strokeStyle = selected ? "#9bbdff" : (d.color || "#f59e0b");
+        ctx.fillStyle = selected ? "#9bbdff" : (d.color || "#f59e0b");
+        ctx.lineWidth = selected ? 2.5 : 1.5;
         ctx.setLineDash([]);
         if (d.type === "hline") {
           const y = priceToY(d.price) + cH / 2;
@@ -1051,11 +1129,54 @@ export default function DataLayer() {
       return { bucket, price };
     }
 
+    // Hit-test: which existing drawing (if any) is under the mouse?
+    function hitTestDrawing(mx, my) {
+      const dd = drawDataRef.current;
+      if (!dd || !dd.buckets.length || !dd.allPrices.length) return null;
+      const bucketX = (bk) => {
+        const i = dd.buckets.indexOf(bk);
+        if (i < 0) return null;
+        return VOL_W + i * dd.cW - dd.scrollX + dd.cW / 2;
+      };
+      const priceToY = (p) => ((dd.topP - p) / TICK) * dd.cH - dd.scrollY + dd.cH / 2;
+      const TOL = 6; // 6px tolerance
+      for (const d of drawingsRef.current || []) {
+        if (d.type === "hline") {
+          const y = priceToY(d.price);
+          if (Math.abs(my - y) <= TOL) return d;
+        } else if (d.type === "trendline" && d.from && d.to) {
+          const x1 = bucketX(d.from.bucket), x2 = bucketX(d.to.bucket);
+          if (x1 == null || x2 == null) continue;
+          const y1 = priceToY(d.from.price), y2 = priceToY(d.to.price);
+          // Distance from point to line segment
+          const A = mx - x1, B = my - y1, C = x2 - x1, D = y2 - y1;
+          const len2 = C * C + D * D;
+          if (len2 === 0) continue;
+          const t = Math.max(0, Math.min(1, (A * C + B * D) / len2));
+          const px = x1 + t * C, py = y1 + t * D;
+          if (Math.hypot(mx - px, my - py) <= TOL) return d;
+        } else if (d.type === "text") {
+          const x = bucketX(d.bucket);
+          if (x == null) continue;
+          const y = priceToY(d.price);
+          const w = Math.max(20, d.text.length * 6);
+          if (Math.abs(mx - x) <= w / 2 + TOL && Math.abs(my - y) <= 10) return d;
+        }
+      }
+      return null;
+    }
+
     function onMouseDown(e) {
+      // Only handle primary button here; right-click goes to contextmenu
+      if (e.button !== 0) return;
+
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
       const mode = drawModeRef.current;
+
+      // Close any open context menu
+      setCtxMenu(null);
 
       // Drawing mode: intercept clicks inside the grid area
       if (mode !== "pointer" && mx >= VOL_W && mx < rect.width - PRICE_W && my < rect.height - FOOTER_H) {
@@ -1084,12 +1205,40 @@ export default function DataLayer() {
         return;
       }
 
+      // Pointer mode: try to select an existing drawing first
+      if (mode === "pointer" && mx >= VOL_W && mx < rect.width - PRICE_W && my < rect.height - FOOTER_H) {
+        const hit = hitTestDrawing(mx, my);
+        if (hit) {
+          setSelectedDrawingId(hit.id);
+          scheduleDraw();
+          return;
+        }
+        // Click on empty space deselects
+        setSelectedDrawingId(null);
+      }
+
       // Default: pan/zoom drag
       v.dragging = true;
       v.dragZone = getDragZone(e);
       v.lastX = e.clientX;
       v.lastY = e.clientY;
       canvas.style.cursor = v.dragZone === "grid" ? "grabbing" : v.dragZone === "time" ? "ew-resize" : "ns-resize";
+    }
+
+    // Right-click on the chart → context menu with quick actions
+    function onContextMenu(e) {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      // Only show if inside the chart grid
+      if (mx < VOL_W || mx >= rect.width - PRICE_W || my >= rect.height - FOOTER_H) return;
+      const pt = screenToData(mx, my);
+      if (!pt) return;
+      setCtxMenu({
+        screenX: e.clientX, screenY: e.clientY,
+        price: pt.price, bucket: pt.bucket,
+      });
     }
 
     function onMouseMove(e) {
@@ -1183,6 +1332,7 @@ export default function DataLayer() {
     canvas.addEventListener("mouseleave", onMouseLeave);
     canvas.addEventListener("wheel", onWheel, { passive: false });
     canvas.addEventListener("dblclick", onDblClick);
+    canvas.addEventListener("contextmenu", onContextMenu);
     return () => {
       canvas.removeEventListener("mousedown", onMouseDown);
       canvas.removeEventListener("mousemove", onMouseMove);
@@ -1190,6 +1340,7 @@ export default function DataLayer() {
       canvas.removeEventListener("mouseleave", onMouseLeave);
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("dblclick", onDblClick);
+      canvas.removeEventListener("contextmenu", onContextMenu);
     };
   }, [scheduleDraw]);
 
@@ -1757,7 +1908,7 @@ export default function DataLayer() {
     ],
     Help: [
       { label: "About Datrena…", onClick: () => setShowAbout(true) },
-      { label: "Keyboard Shortcuts", onClick: () => alert("Shift+Z to enter · ESC to exit drawing/modals · double-click chart to reset zoom") },
+      { label: "Keyboard Shortcuts…", onClick: () => setShowShortcuts(true) },
     ],
   };
 
@@ -2571,6 +2722,111 @@ export default function DataLayer() {
             <p>Press <strong style={{ color: "#c0c0d8" }}>Shift+Z</strong> on the public site to enter the chart. <strong style={{ color: "#c0c0d8" }}>ESC</strong> to exit drawing/modals.</p>
           </div>
         </Modal>
+      )}
+
+      {showShortcuts && (
+        <Modal title="Keyboard Shortcuts" onClose={() => setShowShortcuts(false)} width={460}>
+          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 16px", fontSize: 11, color: "#c0c0d8" }}>
+            {[
+              ["Shift+Z", "Open the chart (from any public page)"],
+              ["ESC", "Exit drawing mode · close modals · close context menu"],
+              ["Ctrl/Cmd + S", "Save workspace"],
+              ["Ctrl/Cmd + O", "Open workspace"],
+              ["Ctrl/Cmd + Z", "Undo last drawing"],
+              ["Delete / Backspace", "Delete the selected drawing"],
+              ["V", "Pointer / select mode"],
+              ["L", "Trend line tool"],
+              ["H", "Horizontal line tool"],
+              ["T", "Text label tool"],
+              ["/", "Focus the ticker search"],
+              ["F / F11", "Toggle full-screen"],
+              ["Double-click chart", "Reset zoom"],
+              ["Right-click chart", "Quick-action context menu"],
+              ["Scroll wheel", "Zoom price + time axes"],
+              ["Drag price/time axis", "Compress / expand that axis"],
+            ].map(([keys, desc]) => (
+              <React.Fragment key={keys}>
+                <kbd style={{
+                  background: "#0c0c14", border: "1px solid #2a2a3a", color: "#c0c0d8",
+                  padding: "2px 8px", borderRadius: 3, fontFamily: "monospace",
+                  fontSize: 10, fontWeight: 600, whiteSpace: "nowrap", textAlign: "center",
+                }}>{keys}</kbd>
+                <span style={{ color: "#888", alignSelf: "center" }}>{desc}</span>
+              </React.Fragment>
+            ))}
+          </div>
+        </Modal>
+      )}
+
+      {/* ─────────────────── RIGHT-CLICK CONTEXT MENU ─────────────────── */}
+      {ctxMenu && (
+        <>
+          <div
+            onClick={() => setCtxMenu(null)}
+            onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }}
+            style={{ position: "fixed", inset: 0, zIndex: 240 }}
+          />
+          <div
+            style={{
+              position: "fixed",
+              top: Math.min(ctxMenu.screenY, window.innerHeight - 220),
+              left: Math.min(ctxMenu.screenX, window.innerWidth - 240),
+              zIndex: 241, minWidth: 220,
+              background: "#15151f", border: "1px solid #2a2a3a", borderRadius: 4,
+              boxShadow: "0 6px 24px rgba(0,0,0,0.7)", padding: "4px 0",
+              fontFamily: "sans-serif", fontSize: 11,
+            }}
+          >
+            <div style={{
+              padding: "5px 14px", color: "#666", fontSize: 10,
+              borderBottom: "1px solid #1a1a28", fontFamily: "monospace",
+            }}>
+              {ctxMenu.bucket?.slice(11, 16)} · <span style={{ color: "#c0c0d8" }}>{ctxMenu.price.toFixed(2)}</span>
+            </div>
+            {[
+              { label: `Add horizontal line @ ${ctxMenu.price.toFixed(2)}`, icon: Minus, onClick: () => {
+                setDrawings((prev) => [...prev, { id: Date.now(), type: "hline", price: ctxMenu.price, color: "#f59e0b" }]);
+                logMsgRef.current?.("info", `Hline @ ${ctxMenu.price.toFixed(2)}`);
+              }},
+              { label: "Add text label here…", icon: Type, onClick: () => {
+                const text = window.prompt("Text label:", "");
+                if (text && text.trim()) {
+                  setDrawings((prev) => [...prev, { id: Date.now(), type: "text", bucket: ctxMenu.bucket, price: ctxMenu.price, text: text.trim(), color: "#f59e0b" }]);
+                  logMsgRef.current?.("info", `Text label "${text.trim()}" placed`);
+                }
+              }},
+              { divider: true },
+              { label: "Start trend line from here", icon: PenTool, onClick: () => {
+                drawingInProgress.current = { type: "trendline", from: { bucket: ctxMenu.bucket, price: ctxMenu.price } };
+                setDrawMode("trendline");
+                scheduleDraw();
+              }},
+              { divider: true },
+              { label: "Reset zoom", icon: Maximize2, onClick: resetZoom },
+              { label: "Snap to latest", icon: ChevronsRight, onClick: snapToLatest },
+              { divider: true },
+              { label: "Clear all drawings", icon: XIcon, onClick: clearDrawings, danger: true },
+            ].map((item, i) => item.divider ? (
+              <div key={`d${i}`} style={{ height: 1, background: "#2a2a3a", margin: "3px 0" }} />
+            ) : (
+              <button
+                key={i}
+                onClick={() => { item.onClick(); setCtxMenu(null); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10, width: "100%",
+                  padding: "5px 14px", background: "transparent", border: "none",
+                  color: item.danger ? "#ef8888" : "#c0c0d8",
+                  fontSize: 11, fontFamily: "sans-serif", cursor: "pointer", textAlign: "left",
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = item.danger ? "#3a1414" : "#1f3a6a"}
+                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+              >
+                {item.icon && <item.icon size={11} />}
+                <span style={{ flex: 1 }}>{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
