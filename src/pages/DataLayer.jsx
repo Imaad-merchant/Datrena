@@ -6,7 +6,6 @@ import {
   ChevronLeft as CLeft, ChevronRight as CRight, ChevronsLeft, ChevronUp,
   Maximize2, Plus,
 } from "lucide-react";
-import MainNav from "../components/navigation/MainNav";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 // Binance live data — direct WebSocket from the desktop app.
@@ -1687,8 +1686,7 @@ export default function DataLayer() {
   );
 
   return (
-    <div style={{ height: "100vh", background: "#0a0a10", display: "flex", flexDirection: "column", fontFamily: "monospace", paddingLeft: "4rem", color: "#c0c0d0" }}>
-      <MainNav />
+    <div style={{ height: "100vh", background: "#0a0a10", display: "flex", flexDirection: "column", fontFamily: "monospace", color: "#c0c0d0" }}>
 
       {/* ─────────────────── 1. WINDOW TITLE BAR ─────────────────── */}
       <div style={{
