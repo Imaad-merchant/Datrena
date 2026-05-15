@@ -1228,6 +1228,57 @@ export default function DataLayer() {
     scheduleDraw();
   }, [scheduleDraw]);
 
+  // ── Aggregate readouts for the dense chart header + overlays ────────
+  // All computed from candlesRef / ohlcRef / rawTradesRef on every statsTick.
+  const aggregates = (() => {
+    const olc = ohlcRef.current || {};
+    const can = candlesRef.current || {};
+    const buckets = Object.keys(olc).sort();
+    const latest = buckets.length ? olc[buckets[buckets.length - 1]] : null;
+    const prev = buckets.length > 1 ? olc[buckets[buckets.length - 2]] : null;
+
+    let dailyHigh = -Infinity, dailyLow = Infinity, totalVol = 0, totalTrades = 0;
+    let totalLevels = 0;
+    for (const b of buckets) {
+      const bar = olc[b];
+      if (bar) {
+        if (bar.high > dailyHigh) dailyHigh = bar.high;
+        if (bar.low < dailyLow) dailyLow = bar.low;
+      }
+      const cells = can[b] || {};
+      const lvlKeys = Object.keys(cells);
+      totalLevels += lvlKeys.length;
+      for (const k of lvlKeys) {
+        totalVol += (cells[k].a || 0) + (cells[k].b || 0);
+      }
+    }
+
+    // Current bar delta (latest bucket): ask - bid
+    let curAsk = 0, curBid = 0;
+    if (latest && can[buckets[buckets.length - 1]]) {
+      Object.values(can[buckets[buckets.length - 1]]).forEach((c) => {
+        curAsk += c.a || 0;
+        curBid += c.b || 0;
+      });
+    }
+
+    return {
+      latest,
+      prev,
+      change: latest && prev ? latest.close - prev.close : 0,
+      deltaChange: curAsk - curBid,
+      dailyHigh: dailyHigh === -Infinity ? 0 : dailyHigh,
+      dailyLow: dailyLow === Infinity ? 0 : dailyLow,
+      avgLevelVol: totalLevels ? Math.round(totalVol / totalLevels) : 0,
+      avgBarVol: buckets.length ? Math.round(totalVol / buckets.length) : 0,
+      totalTrades: rawTradesRef.current?.length || 0,
+      barCount: buckets.length,
+    };
+  })();
+  // Force re-compute when statsTick changes
+  // eslint-disable-next-line no-unused-expressions
+  statsTick;
+
   // ── Stats grid data ──────────────────────────────────────────────────
   // Reads from candlesRef on each statsTick (1s interval) and computes
   // per-bucket order-flow stats for the most recent 12 candles.
@@ -1539,7 +1590,35 @@ export default function DataLayer() {
         ><Plus size={12} /></button>
       </div>
 
-      {/* ─────────────────── 5. CHART HEADER (per-chart info) ─────────────────── */}
+      {/* ─────────── 5a. DENSE READOUT ROW (live aggregates) ─────────── */}
+      <div style={{
+        background: "#0a0a10", borderBottom: "1px solid #131320",
+        padding: "3px 12px", display: "flex", alignItems: "center", gap: 12,
+        fontFamily: "monospace", fontSize: 10, flexShrink: 0, flexWrap: "nowrap",
+        overflowX: "auto", color: "#7a7a90",
+      }}>
+        <span style={{ color: "#c0c0d8", fontWeight: 700 }}>{label}</span>
+        <span style={{ color: "#404058" }}>·</span>
+        <span style={{ color: "#888" }}>Footprint <span style={{ color: "#c0c0d8" }}>{timeframe}</span></span>
+        <span style={{ color: "#404058" }}>·</span>
+        <span>C: <span style={{ color: aggregates.latest && aggregates.prev && aggregates.latest.close >= aggregates.prev.close ? "#5ee07a" : "#ef8888" }}>
+          {aggregates.latest ? aggregates.latest.close.toFixed(2) : "—"}
+        </span></span>
+        <span>T: <span style={{ color: "#c0c0d8" }}>{aggregates.totalTrades.toLocaleString()}</span></span>
+        <span>Chg: <span style={{ color: aggregates.change >= 0 ? "#5ee07a" : "#ef8888" }}>
+          {aggregates.change >= 0 ? "+" : ""}{aggregates.change.toFixed(4)}
+        </span></span>
+        <span>ΔChg: <span style={{ color: aggregates.deltaChange >= 0 ? "#4488ee" : "#ee5577", fontWeight: 600 }}>
+          {aggregates.deltaChange >= 0 ? "+" : ""}{aggregates.deltaChange.toLocaleString()}
+        </span></span>
+        <span style={{ color: "#404058" }}>·</span>
+        <span style={{ color: "#888" }}>{now.toISOString().replace("T", " ").slice(0, 19)}</span>
+        <span style={{ color: "#404058" }}>·</span>
+        <span>H: <span style={{ color: "#c0c0d8" }}>{aggregates.dailyHigh ? aggregates.dailyHigh.toFixed(2) : "—"}</span></span>
+        <span>L: <span style={{ color: "#c0c0d8" }}>{aggregates.dailyLow ? aggregates.dailyLow.toFixed(2) : "—"}</span></span>
+      </div>
+
+      {/* ─────────────────── 5b. CHART HEADER (interactive controls) ─────────────────── */}
       <div style={{
         borderBottom: "1px solid #151520", background: "#0a0a10", padding: "4px 12px",
         display: "flex", alignItems: "center", gap: 10, flexShrink: 0, flexWrap: "nowrap", overflow: "hidden",
@@ -1709,6 +1788,34 @@ export default function DataLayer() {
       {/* ─────────────────── 6. CANVAS ─────────────────── */}
       <div ref={containerRef} style={{ flex: 1, position: "relative", overflow: "hidden", minHeight: 200 }}>
         <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
+
+        {/* Upper-right floating volume stats overlay */}
+        <div style={{
+          position: "absolute", top: 8, right: 70, zIndex: 5,
+          background: "rgba(10,10,16,0.75)", border: "1px solid #1f1f2e",
+          borderRadius: 3, padding: "3px 8px", fontFamily: "monospace", fontSize: 10,
+          color: "#7a7a90", lineHeight: 1.35, pointerEvents: "none",
+          backdropFilter: "blur(2px)",
+        }}>
+          <div>AvgLevelVol <span style={{ color: "#c0c0d8" }}>{aggregates.avgLevelVol}</span></div>
+          <div>AvgBarVol <span style={{ color: "#c0c0d8" }}>{aggregates.avgBarVol}</span></div>
+          <div style={{ color: "#404058", fontSize: 9 }}>
+            Bars: <span style={{ color: "#888" }}>{aggregates.barCount}</span>
+          </div>
+        </div>
+
+        {/* Lower-right chart instance tag */}
+        <div style={{
+          position: "absolute", bottom: 6, right: 70, zIndex: 5,
+          background: status === "connected" ? "#0a3a18" : "#3a1a0a",
+          border: status === "connected" ? "1px solid #1a5028" : "1px solid #5a2018",
+          color: status === "connected" ? "#5ee07a" : "#ef8888",
+          padding: "1px 6px", fontFamily: "monospace", fontSize: 9, fontWeight: 700,
+          letterSpacing: 1, borderRadius: 2,
+        }}>
+          {status === "connected" ? "1 L" : "1 D"}
+        </div>
+
         {showSnap && (
           <button
             onClick={snapToLatest}
@@ -1727,7 +1834,48 @@ export default function DataLayer() {
         )}
       </div>
 
-      {/* ─────────────────── 7. STATS GRID (per-candle order flow) ─────────────────── */}
+      {/* ─────────── 7a. DIVERGENCE COUNT STRIP ─────────── */}
+      <div style={{
+        background: "#0a0a10", borderTop: "1px solid #1a1a28",
+        padding: "2px 12px", display: "flex", alignItems: "center", gap: 18,
+        fontFamily: "monospace", fontSize: 9, color: "#666", flexShrink: 0,
+      }}>
+        {(() => {
+          // Simple bullish/bearish divergence count: compare delta sign to price direction
+          let bullDiv = 0, bearDiv = 0;
+          for (let i = 1; i < statsBuckets.length; i++) {
+            const cur = statsBuckets[i];
+            const prev = statsBuckets[i - 1];
+            if (!cur.bar || !prev.bar) continue;
+            const priceUp = cur.bar.close > prev.bar.close;
+            if (priceUp && cur.delta < 0) bearDiv++;
+            if (!priceUp && cur.delta > 0) bullDiv++;
+          }
+          return (
+            <>
+              <span>
+                Bearish Div Count
+                <span style={{ color: "#ef8888", fontWeight: 700, marginLeft: 6 }}>
+                  Sum: {bearDiv.toFixed(3)}
+                </span>
+                <span style={{ color: "#404058", marginLeft: 6 }}>(window: {statsBuckets.length})</span>
+              </span>
+              <span>
+                Bullish Div Count
+                <span style={{ color: "#5ee07a", fontWeight: 700, marginLeft: 6 }}>
+                  Sum: {bullDiv.toFixed(3)}
+                </span>
+                <span style={{ color: "#404058", marginLeft: 6 }}>(window: {statsBuckets.length})</span>
+              </span>
+              <span style={{ marginLeft: "auto", color: "#404058" }}>
+                Live · {now.toLocaleTimeString()}
+              </span>
+            </>
+          );
+        })()}
+      </div>
+
+      {/* ─────────────────── 7b. STATS GRID (per-candle order flow) ─────────────────── */}
       <div style={{
         background: "#0a0a10", borderTop: "1px solid #1a1a28",
         flexShrink: 0, overflowX: "auto", fontFamily: "monospace", fontSize: 10,
