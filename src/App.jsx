@@ -14,7 +14,6 @@ import ForgeLabs from './pages/ForgeLabs';
 import GithubPRs from './pages/GithubPRs';
 import DataLayer from './pages/DataLayer';
 import Checkout from './pages/Checkout';
-import SignIn from './pages/SignIn';
 import Backtesting from './pages/Backtesting';
 import Download from './pages/Download';
 import AdminWaitlist from './pages/AdminWaitlist';
@@ -47,7 +46,6 @@ const AuthenticatedApp = () => {
       <Route path="/ForgeLabs" element={<ForgeLabs />} />
       <Route path="/Download" element={<Download />} />
       <Route path="/Waitlist" element={<Download />} />
-      <Route path="/SignIn" element={<SignIn />} />
       <Route path="/Checkout" element={<Checkout />} />
       <Route path="/GithubPRs" element={<GithubPRs />} />
 
