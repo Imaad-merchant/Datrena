@@ -9,8 +9,13 @@ import {
 
 // ── Config ────────────────────────────────────────────────────────────────────
 // Binance live data — direct WebSocket from the desktop app.
-const BINANCE_WS_BASE = "wss://stream.binance.com:9443/stream?streams=";
-const BINANCE_REST_BASE = "https://api.binance.com/api/v3";
+// Binance.US endpoints — Binance.com is geo-blocked from US IPs (Binance
+// has refused US connections since 2019), so we hit the US-licensed
+// affiliate instead. Identical API + WS message format. Fewer pairs
+// available but the major ones (BTC/ETH/SOL/DOGE/ADA/AVAX/LINK/etc.)
+// all work with full L2.5 depth via the @depth diff stream.
+const BINANCE_WS_BASE = "wss://stream.binance.us:9443/stream?streams=";
+const BINANCE_REST_BASE = "https://api.binance.us/api/v3";
 
 // Tick size is now per-symbol (set when ticker changes). Default = 1.0.
 let TICK = 1.0;
@@ -281,6 +286,9 @@ export default function DataLayer() {
   const orderEventsRef   = useRef([]);
   const icebergAlertsRef = useRef([]);
   const pullRateRef      = useRef({});
+  // Hook so the trade handler can notify the depth analyzer
+  // (lets depth diffs classify removed liquidity as fill vs cancel)
+  const tradeTickerRef   = useRef(null);
 
   useEffect(() => { timeframeRef.current = timeframe; }, [timeframe]);
   useEffect(() => { overlaysRef.current = overlays; }, [overlays]);
@@ -1422,21 +1430,129 @@ export default function DataLayer() {
     })();
 
     // ── L3 order-book sync helpers ─────────────────────────────────
-    // Apply a single Binance depth diff event to the local full book.
+    // recent-trades-by-price (rounded) → timestamp · used to classify
+    // depth decreases as fills (recent trade at price) vs cancels (no trade).
+    const recentTradesByPrice = new Map(); // key: priceRounded.toFixed(2), val: ms
+    // per-level stats for iceberg + pull-rate detection:
+    //   { refills, totalConsumed, lastSize, cancels, fills, side }
+    const levelStats = new Map(); // key: `${side}:${price.toFixed(2)}`
+
+    // Expose to the trade handler closure
+    tradeTickerRef.current = (priceStr) => {
+      recentTradesByPrice.set(priceStr, Date.now());
+      // prune old entries every ~100 trades to bound memory
+      if (recentTradesByPrice.size > 2000) {
+        const cutoff = Date.now() - 2000;
+        for (const [k, t] of recentTradesByPrice) if (t < cutoff) recentTradesByPrice.delete(k);
+      }
+    };
+
+    // Apply a single Binance depth diff event to the local full book,
+    // synthesizing order-events, iceberg alerts, and pull-rate stats
+    // from the diff (Binance public API doesn't expose per-order MBO so
+    // we infer activity from depth changes + recent trade timing).
     const applyDepthEvent = (evt) => {
       const book = fullBookRef.current;
-      (evt.b || []).forEach(([p, q]) => {
-        const price = parseFloat(p);
-        const qty = parseFloat(q);
-        if (qty === 0) book.bids.delete(price);
-        else book.bids.set(price, qty);
-      });
-      (evt.a || []).forEach(([p, q]) => {
-        const price = parseFloat(p);
-        const qty = parseFloat(q);
-        if (qty === 0) book.asks.delete(price);
-        else book.asks.set(price, qty);
-      });
+      const now = Date.now();
+      const newOrderEvents = [];
+
+      const process = (entries, sideMap, side) => {
+        (entries || []).forEach(([p, q]) => {
+          const price = parseFloat(p);
+          const newQty = parseFloat(q);
+          const oldQty = sideMap.get(price) || 0;
+          const delta = newQty - oldQty;
+          const key = `${side}:${price.toFixed(2)}`;
+          let stats = levelStats.get(key);
+          if (!stats) {
+            stats = { refills: 0, totalConsumed: 0, lastSize: oldQty, cancels: 0, fills: 0, side };
+            levelStats.set(key, stats);
+          }
+
+          if (delta > 0) {
+            // Liquidity added (new level or refill of existing level)
+            const action = oldQty === 0 && stats.lastSize === 0 ? "add" : "add";
+            // Refill = level that was previously consumed (lastSize > 0, then 0, now > 0)
+            if (oldQty === 0 && stats.lastSize > 0) stats.refills++;
+            newOrderEvents.push({ action, price, size: delta, side, timestamp: new Date(now).toISOString() });
+          } else if (delta < 0) {
+            // Liquidity removed — classify as fill (trade at price within 500ms) vs cancel
+            const tradeT = recentTradesByPrice.get(price.toFixed(2));
+            const isFill = tradeT && (now - tradeT < 500);
+            const removed = -delta;
+            if (isFill) {
+              stats.fills++;
+              stats.totalConsumed += removed;
+              newOrderEvents.push({ action: "fill", price, size: removed, side, timestamp: new Date(now).toISOString() });
+            } else {
+              stats.cancels++;
+              newOrderEvents.push({ action: "cancel", price, size: removed, side, timestamp: new Date(now).toISOString() });
+            }
+          }
+          stats.lastSize = newQty;
+
+          // Apply to book
+          if (newQty === 0) sideMap.delete(price);
+          else sideMap.set(price, newQty);
+
+          // Pull-rate update — ratio of cancels to (cancels + fills)
+          const total = stats.cancels + stats.fills;
+          if (total >= 3) {
+            pullRateRef.current[key] = {
+              price, side,
+              pullRate: stats.cancels / total,
+              sampleSize: total,
+            };
+          }
+
+          // Iceberg trigger: level has refilled ≥3 times AND total fills
+          // exceed 2× the current visible size (hidden inventory clearly
+          // outstripping what's shown on the book)
+          if (stats.refills >= 3 && stats.fills > 0 && stats.totalConsumed > newQty * 2) {
+            // Dedupe: skip if we already alerted on this price in the last 30s
+            const lastAlert = icebergAlertsRef.current.find(
+              (a) => Math.abs(a.price - price) < 0.001 && (now - new Date(a.timestamp).getTime()) < 30000
+            );
+            if (!lastAlert) {
+              icebergAlertsRef.current.push({
+                timestamp: new Date(now).toISOString(),
+                price,
+                side,
+                estimatedHiddenSize: Math.round(stats.totalConsumed - newQty),
+                refillCount: stats.refills,
+              });
+              if (icebergAlertsRef.current.length > 50) {
+                icebergAlertsRef.current = icebergAlertsRef.current.slice(-40);
+              }
+              logMsgRef.current?.("warn", `Iceberg @ ${price.toFixed(2)} (${side}) · ~${Math.round(stats.totalConsumed - newQty)} hidden`);
+            }
+          }
+        });
+      };
+
+      process(evt.b, book.bids, "bid");
+      process(evt.a, book.asks, "ask");
+
+      // Append events to the rolling order-events buffer
+      if (newOrderEvents.length > 0) {
+        orderEventsRef.current.push(...newOrderEvents);
+        if (orderEventsRef.current.length > 800) {
+          orderEventsRef.current = orderEventsRef.current.slice(-600);
+        }
+      }
+
+      // Prune stats for far-from-spread levels so the Map doesn't grow
+      // unbounded over a long session.
+      if (levelStats.size > 2000) {
+        const bestBid = Math.max(...book.bids.keys());
+        const bestAsk = Math.min(...book.asks.keys());
+        const mid = (bestBid + bestAsk) / 2;
+        for (const [k, _s] of levelStats) {
+          const p = parseFloat(k.split(":")[1]);
+          if (Math.abs(p - mid) / mid > 0.05) levelStats.delete(k);
+        }
+      }
+
       book.lastUpdateId = evt.u;
     };
 
@@ -1494,6 +1610,11 @@ export default function DataLayer() {
         synced: false, buffer: [], lastUpdateId: 0, bookLevel: "L2",
       };
       setBookLevel("L2");
+      // Reset synthesized analysis state — stale alerts from a previous
+      // symbol shouldn't show up on the new one
+      orderEventsRef.current = [];
+      icebergAlertsRef.current = [];
+      pullRateRef.current = {};
 
       // Combined stream: aggregated trades + FULL depth diff (100ms cadence)
       const streams = [`${sym}@trade`, `${sym}@depth@100ms`].join("/");
@@ -1546,6 +1667,9 @@ export default function DataLayer() {
               rawTradesRef.current = rawTradesRef.current.slice(-40000);
             }
             bucketTrade(candlesRef.current, ohlcRef.current, trade, tf);
+            // Notify the depth analyzer that a trade hit this price level —
+            // lets removed liquidity be classified as fill vs cancel.
+            tradeTickerRef.current?.(price.toFixed(2));
 
             const vw = view.current;
             if (
