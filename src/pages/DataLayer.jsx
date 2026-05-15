@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { RefreshCw, Wifi, WifiOff, ChevronsRight, ChevronDown, Layers, Eye, EyeOff } from "lucide-react";
+import {
+  RefreshCw, Wifi, WifiOff, ChevronsRight, ChevronDown, Layers, Eye, EyeOff,
+  Search, Save, FolderOpen, X as XIcon, MousePointer, PenTool, Type, Minus,
+  Activity, Clock, FileText, MessageSquare, Briefcase, Settings,
+  ChevronLeft as CLeft, ChevronRight as CRight, ChevronsLeft, ChevronUp,
+  Maximize2, Plus,
+} from "lucide-react";
 import MainNav from "../components/navigation/MainNav";
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -171,6 +177,11 @@ export default function DataLayer() {
   const [symbols,   setSymbols]   = useState([]); // all Binance USDT pairs
   const [tickerQuery, setTickerQuery] = useState("BTCUSDT");
   const [showTickerMenu, setShowTickerMenu] = useState(false);
+  // ── Pro-terminal chrome state ────────────────────────────────────────
+  const [openMenu, setOpenMenu] = useState(null); // top menu open: "file" | "chart" | etc.
+  const [workspaceTabs, setWorkspaceTabs] = useState(["BTCUSDT", "ETHUSDT", "SOLUSDT"]);
+  const [statsTick, setStatsTick] = useState(0); // forces stats panel re-render
+  const [now, setNow] = useState(new Date());
   const [dataMode,  setDataMode]  = useState("demo");
   const [countdown, setCountdown] = useState("");
   const [showSnap,  setShowSnap]  = useState(false);
@@ -201,6 +212,27 @@ export default function DataLayer() {
 
   useEffect(() => { timeframeRef.current = timeframe; }, [timeframe]);
   useEffect(() => { overlaysRef.current = overlays; }, [overlays]);
+
+  // Tick the stats panel + clock once per second (reads from candlesRef)
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setStatsTick((t) => t + 1);
+      setNow(new Date());
+    }, 1000);
+    return () => clearInterval(iv);
+  }, []);
+
+  // Close any open menu when clicking outside
+  useEffect(() => {
+    if (!openMenu) return;
+    const close = (e) => {
+      if (!e.target.closest?.("[data-menu-anchor]") && !e.target.closest?.("[data-menu-popup]")) {
+        setOpenMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [openMenu]);
 
   // Fetch every active Binance trading pair on mount (cached for the session)
   useEffect(() => {
@@ -1196,6 +1228,43 @@ export default function DataLayer() {
     scheduleDraw();
   }, [scheduleDraw]);
 
+  // ── Stats grid data ──────────────────────────────────────────────────
+  // Reads from candlesRef on each statsTick (1s interval) and computes
+  // per-bucket order-flow stats for the most recent 12 candles.
+  const statsBuckets = (() => {
+    const can = candlesRef.current || {};
+    const olc = ohlcRef.current || {};
+    const keys = Object.keys(can).sort().slice(-12);
+    return keys.map((k) => {
+      let ask = 0, bid = 0, max = 0, min = Infinity, trades = 0;
+      Object.values(can[k] || {}).forEach((c) => {
+        ask += c.a || 0;
+        bid += c.b || 0;
+        const lvl = (c.a || 0) + (c.b || 0);
+        if (lvl > max) max = lvl;
+        if (lvl < min && lvl > 0) min = lvl;
+        if (lvl > 0) trades++;
+      });
+      const vol = ask + bid;
+      const delta = ask - bid;
+      return {
+        bucket: k,
+        time: k.slice(11, 16),
+        ask, bid, vol, delta,
+        max: max || 0,
+        min: min === Infinity ? 0 : min,
+        deltaVol: vol > 0 ? (delta / vol) : 0,
+        trades,
+        avgTrade: trades > 0 ? Math.round(vol / trades) : 0,
+        bar: olc[k] || null,
+      };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  })();
+  // Reference statsTick to satisfy the lint and force re-computation
+  // eslint-disable-next-line no-unused-expressions
+  statsTick;
+
   // Format display label from the ticker (BTCUSDT → BTC/USDT, ETHBTC → ETH/BTC, etc.)
   const symbolMeta = symbols.find((s) => s.symbol === ticker);
   const label = symbolMeta
@@ -1216,24 +1285,265 @@ export default function DataLayer() {
   const barUp = hoverBar ? hoverBar.c >= hoverBar.o : false;
   const barColor = barUp ? "#22c55e" : "#ef4444";
 
+  // Menu definitions — Datrena pro-terminal top menu (standard generic categories
+  // common to professional desktop trading software).
+  const MENUS = {
+    File: [
+      { label: "New Chart", onClick: () => loadData(ticker, timeframe) },
+      { label: "Refresh Data", onClick: () => loadData(ticker, timeframe) },
+      { divider: true },
+      { label: "Save Workspace", onClick: () => alert("Saving workspaces in a future build") },
+      { label: "Open Workspace…", onClick: () => alert("Workspace files in a future build") },
+      { divider: true },
+      { label: "Exit Datrena", onClick: () => { localStorage.removeItem("datrena_admin"); window.location.href = "/"; } },
+    ],
+    Edit: [
+      { label: "Find Symbol…", onClick: () => { const i = document.querySelector("[data-ticker-input]"); i?.focus(); } },
+      { label: "Clear Drawings", onClick: () => alert("Drawing tools in a future build") },
+    ],
+    View: [
+      { label: "Reset Zoom", onClick: () => {
+        const v = view.current;
+        v.cW = DEFAULT_CW; v.cH = DEFAULT_CH; v.userScrolled = false; v.lastInteraction = 0;
+        scheduleDraw();
+      }},
+      { label: "Snap to Latest", onClick: snapToLatest },
+    ],
+    Chart: [
+      { label: "Footprint Settings", onClick: () => setShowOverlayMenu(true) },
+      { label: "Toggle DEMO/Live", onClick: () => alert("Live feed switching coming soon") },
+    ],
+    Analysis: OVERLAY_DEFS.map((d) => ({
+      label: d.label,
+      checked: !!overlays[d.key],
+      onClick: () => setOverlays((prev) => ({ ...prev, [d.key]: !prev[d.key] })),
+    })),
+    Tools: [
+      { label: "Pointer", icon: MousePointer, onClick: () => alert("Drawing tools in a future build") },
+      { label: "Trend Line", icon: PenTool, onClick: () => alert("Drawing tools in a future build") },
+      { label: "Horizontal Line", icon: Minus, onClick: () => alert("Drawing tools in a future build") },
+      { label: "Text Label", icon: Type, onClick: () => alert("Drawing tools in a future build") },
+    ],
+    Trade: [
+      { label: "Trade Panel (soon)", disabled: true },
+      { label: "Position Window (soon)", disabled: true },
+    ],
+    Window: [
+      { label: "Reload Page", onClick: () => window.location.reload() },
+      { label: "Full Screen", onClick: () => document.documentElement.requestFullscreen?.() },
+    ],
+    Help: [
+      { label: "About Datrena", onClick: () => alert("Datrena · pro order-flow charting · v0.1.0") },
+      { label: "Keyboard Shortcuts", onClick: () => alert("Shift+Z to enter · click 'Exit Admin' to leave") },
+    ],
+  };
+
+  // Compact toolbar buttons grouped by purpose.
+  const ToolBtn = ({ label, icon: Icon, onClick, active, disabled }) => (
+    <button
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      title={label}
+      style={{
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 1,
+        background: active ? "#1a2540" : "transparent", border: "1px solid",
+        borderColor: active ? "#2a3f6a" : "transparent",
+        color: disabled ? "#303040" : active ? "#9bbdff" : "#a0a0b0",
+        padding: "3px 5px", minWidth: 36, cursor: disabled ? "not-allowed" : "pointer",
+        fontSize: 9, fontFamily: "sans-serif", borderRadius: 2,
+      }}
+      onMouseEnter={(e) => { if (!disabled && !active) e.currentTarget.style.background = "#16161e"; }}
+      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}
+    >
+      <Icon size={13} />
+      <span style={{ letterSpacing: 0 }}>{label}</span>
+    </button>
+  );
+  const ToolDivider = () => (
+    <div style={{ width: 1, alignSelf: "stretch", background: "#1c1c28", margin: "0 3px" }} />
+  );
+
   return (
-    <div style={{ height: "100vh", background: "#0a0a10", display: "flex", flexDirection: "column", fontFamily: "monospace", paddingLeft: "4rem" }}>
+    <div style={{ height: "100vh", background: "#0a0a10", display: "flex", flexDirection: "column", fontFamily: "monospace", paddingLeft: "4rem", color: "#c0c0d0" }}>
       <MainNav />
 
-      {/* ── Live data notice ── */}
+      {/* ─────────────────── 1. WINDOW TITLE BAR ─────────────────── */}
       <div style={{
-        background: "#1a1400", borderBottom: "1px solid #33290a", padding: "6px 14px",
-        display: "flex", alignItems: "center", gap: 8, fontFamily: "sans-serif", fontSize: 11,
-        color: "#f59e0b", shrink: 0,
+        background: "#15151c", borderBottom: "1px solid #252535",
+        padding: "3px 10px", display: "flex", alignItems: "center", gap: 12,
+        fontFamily: "sans-serif", fontSize: 10, color: "#8888a0", flexShrink: 0,
       }}>
-        <span style={{ fontWeight: 700 }}>⚠</span>
-        <span>Live Binance feed. Volume on the footprint is per-trade — for true L3 (per-order) attach a Rithmic/CQG feed.</span>
+        <span style={{ color: "#d0d0e0", fontWeight: 700 }}>Datrena</span>
+        <span style={{ color: "#5a5a70" }}>·</span>
+        <span>Workspace: <span style={{ color: "#c0c0d0" }}>default</span></span>
+        <span style={{ color: "#5a5a70" }}>·</span>
+        <span>Feed: <span style={{ color: "#c0c0d0" }}>Binance Spot</span></span>
+        <span style={{ marginLeft: "auto", color: "#888" }}>
+          {now.toLocaleString(undefined, { dateStyle: "short", timeStyle: "medium" })}
+        </span>
       </div>
 
-      {/* ── Toolbar ── */}
+      {/* ─────────────────── 2. MENU BAR ─────────────────── */}
       <div style={{
-        borderBottom: "1px solid #151520", background: "#0a0a10", padding: "6px 14px",
-        display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "nowrap", overflow: "hidden",
+        background: "#10101a", borderBottom: "1px solid #1a1a28",
+        display: "flex", alignItems: "stretch", fontFamily: "sans-serif",
+        fontSize: 11, flexShrink: 0, position: "relative", zIndex: 50,
+      }}>
+        {Object.keys(MENUS).map((name) => (
+          <div key={name} style={{ position: "relative" }} data-menu-anchor>
+            <button
+              onClick={() => setOpenMenu(openMenu === name ? null : name)}
+              onMouseEnter={() => openMenu && setOpenMenu(name)}
+              style={{
+                padding: "4px 11px", background: openMenu === name ? "#1c1c2a" : "transparent",
+                border: "none", color: "#c0c0d0", cursor: "pointer", fontSize: 11,
+              }}
+            >
+              <span style={{ textDecoration: "underline", textDecorationColor: "transparent" }}>
+                <span style={{ textDecorationColor: "#666", textDecoration: "underline" }}>{name[0]}</span>{name.slice(1)}
+              </span>
+            </button>
+            {openMenu === name && (
+              <div data-menu-popup style={{
+                position: "absolute", top: "100%", left: 0, minWidth: 200,
+                background: "#15151f", border: "1px solid #2a2a3a",
+                boxShadow: "0 6px 20px rgba(0,0,0,0.7)", padding: "3px 0", zIndex: 100,
+              }}>
+                {MENUS[name].map((item, i) => item.divider ? (
+                  <div key={i} style={{ height: 1, background: "#2a2a3a", margin: "3px 0" }} />
+                ) : (
+                  <button
+                    key={i}
+                    disabled={item.disabled}
+                    onClick={() => { item.onClick?.(); setOpenMenu(null); }}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8, width: "100%",
+                      padding: "5px 14px", background: "transparent", border: "none",
+                      color: item.disabled ? "#444" : "#c0c0d0", fontSize: 11,
+                      cursor: item.disabled ? "not-allowed" : "pointer", textAlign: "left",
+                    }}
+                    onMouseEnter={(e) => { if (!item.disabled) e.currentTarget.style.background = "#1f3a6a"; }}
+                    onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                  >
+                    {item.checked !== undefined && (
+                      <span style={{ width: 10, color: item.checked ? "#5ee07a" : "transparent" }}>✓</span>
+                    )}
+                    {item.icon && <item.icon size={11} />}
+                    <span style={{ flex: 1 }}>{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* ─────────────────── 3. ICON TOOLBAR ─────────────────── */}
+      <div style={{
+        background: "#0e0e16", borderBottom: "1px solid #1a1a28",
+        padding: "2px 6px", display: "flex", alignItems: "center", flexShrink: 0,
+        overflowX: "auto",
+      }}>
+        {/* Symbol group */}
+        <ToolBtn label="Find" icon={Search} onClick={() => { document.querySelector("[data-ticker-input]")?.focus(); }} />
+        <ToolBtn label="Open" icon={FolderOpen} onClick={() => alert("Workspace files in a future build")} />
+        <ToolBtn label="Save" icon={Save} onClick={() => alert("Saving workspaces in a future build")} />
+        <ToolBtn label="Close" icon={XIcon} onClick={() => { localStorage.removeItem("datrena_admin"); window.location.href = "/"; }} />
+        <ToolDivider />
+
+        {/* Connection */}
+        <ToolBtn label="Conn" icon={Wifi} active={status === "connected"} />
+        <ToolBtn label="Disc" icon={WifiOff} active={status !== "connected"} />
+        <ToolDivider />
+
+        {/* Navigation */}
+        <ToolBtn label="First" icon={ChevronsLeft} onClick={() => alert("Bar navigation in a future build")} />
+        <ToolBtn label="Prev" icon={CLeft} onClick={() => alert("Bar navigation in a future build")} />
+        <ToolBtn label="Next" icon={CRight} onClick={() => alert("Bar navigation in a future build")} />
+        <ToolBtn label="Last" icon={ChevronsRight} onClick={snapToLatest} />
+        <ToolDivider />
+
+        {/* Chart tools */}
+        <ToolBtn label="Settings" icon={Settings} onClick={() => setShowOverlayMenu(true)} />
+        <ToolBtn label="Studies" icon={Layers} onClick={() => setOpenMenu("Analysis")} />
+        <ToolBtn label="Pointer" icon={MousePointer} onClick={() => alert("Drawing tools in a future build")} />
+        <ToolDivider />
+
+        {/* Drawing */}
+        <ToolBtn label="Line" icon={PenTool} onClick={() => alert("Drawing tools in a future build")} />
+        <ToolBtn label="Hline" icon={Minus} onClick={() => alert("Drawing tools in a future build")} />
+        <ToolBtn label="Text" icon={Type} onClick={() => alert("Drawing tools in a future build")} />
+        <ToolDivider />
+
+        {/* Replay + values */}
+        <ToolBtn label="Replay" icon={Activity} onClick={() => alert("Replay engine in a future build")} />
+        <ToolBtn label="Values" icon={FileText} onClick={() => alert("Values window in a future build")} />
+        <ToolBtn label="Msgs" icon={MessageSquare} onClick={() => alert("Message log in a future build")} />
+        <ToolBtn label="Position" icon={Briefcase} onClick={() => alert("Trade panel in a future build")} />
+        <ToolDivider />
+
+        {/* Timeframes */}
+        {["1m", "5m", "15m", "30m", "1h", "4h", "D"].map((tf) => (
+          <ToolBtn key={tf} label={tf} icon={Clock} active={timeframe === tf} onClick={() => setTimeframe(tf)} />
+        ))}
+        <ToolDivider />
+
+        {/* Page */}
+        <ToolBtn label="Full" icon={Maximize2} onClick={() => document.documentElement.requestFullscreen?.()} />
+      </div>
+
+      {/* ─────────────────── 4. WORKSPACE / SYMBOL TABS ─────────────────── */}
+      <div style={{
+        background: "#0c0c14", borderBottom: "1px solid #1a1a28",
+        display: "flex", alignItems: "stretch", fontFamily: "sans-serif", fontSize: 11,
+        flexShrink: 0,
+      }}>
+        {workspaceTabs.map((sym) => (
+          <button
+            key={sym}
+            onClick={() => { setTicker(sym); setTickerQuery(sym); }}
+            style={{
+              padding: "4px 14px", border: "none", borderRight: "1px solid #1a1a28",
+              background: sym === ticker ? "#0a0a10" : "#15151f",
+              color: sym === ticker ? "#9bbdff" : "#888",
+              cursor: "pointer", fontSize: 10, fontWeight: sym === ticker ? 700 : 400,
+              borderTop: sym === ticker ? "2px solid #4a8cff" : "2px solid transparent",
+              display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            {sym.replace("USDT", "/USDT").toLowerCase()}
+            {workspaceTabs.length > 1 && (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const next = workspaceTabs.filter((t) => t !== sym);
+                  setWorkspaceTabs(next);
+                  if (sym === ticker && next.length > 0) { setTicker(next[0]); setTickerQuery(next[0]); }
+                }}
+                style={{ color: "#555", fontSize: 11, padding: "0 2px" }}
+              >×</span>
+            )}
+          </button>
+        ))}
+        <button
+          onClick={() => {
+            if (!workspaceTabs.includes(ticker)) {
+              setWorkspaceTabs([...workspaceTabs, ticker]);
+            }
+          }}
+          title="Add current symbol as a workspace tab"
+          style={{
+            padding: "4px 8px", border: "none", background: "transparent",
+            color: "#555", cursor: "pointer", fontSize: 12,
+          }}
+        ><Plus size={12} /></button>
+      </div>
+
+      {/* ─────────────────── 5. CHART HEADER (per-chart info) ─────────────────── */}
+      <div style={{
+        borderBottom: "1px solid #151520", background: "#0a0a10", padding: "4px 12px",
+        display: "flex", alignItems: "center", gap: 10, flexShrink: 0, flexWrap: "nowrap", overflow: "hidden",
+        fontFamily: "sans-serif",
       }}>
         {/* Ticker info */}
         <span style={{ fontWeight: 700, fontSize: 13, fontFamily: "sans-serif", color: "#c0c0d8" }}>{label}</span>
@@ -1278,6 +1588,7 @@ export default function DataLayer() {
         {/* Ticker combobox — every Binance trading pair, searchable */}
         <div style={{ position: "relative" }}>
           <input
+            data-ticker-input
             value={tickerQuery}
             onChange={(e) => { setTickerQuery(e.target.value.toUpperCase()); setShowTickerMenu(true); }}
             onFocus={() => setShowTickerMenu(true)}
@@ -1395,14 +1706,14 @@ export default function DataLayer() {
         </div>
       </div>
 
-      {/* ── Canvas ── */}
-      <div ref={containerRef} style={{ flex: 1, position: "relative", overflow: "hidden" }}>
+      {/* ─────────────────── 6. CANVAS ─────────────────── */}
+      <div ref={containerRef} style={{ flex: 1, position: "relative", overflow: "hidden", minHeight: 200 }}>
         <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
         {showSnap && (
           <button
             onClick={snapToLatest}
             style={{
-              position: "absolute", bottom: 90, right: 70,
+              position: "absolute", bottom: 20, right: 70,
               background: "#12203a", border: "1px solid #1a3a6a", borderRadius: 6,
               color: "#60a5fa", padding: "6px 10px", cursor: "pointer",
               display: "flex", alignItems: "center", gap: 4,
@@ -1414,6 +1725,122 @@ export default function DataLayer() {
             <ChevronsRight size={14} />
           </button>
         )}
+      </div>
+
+      {/* ─────────────────── 7. STATS GRID (per-candle order flow) ─────────────────── */}
+      <div style={{
+        background: "#0a0a10", borderTop: "1px solid #1a1a28",
+        flexShrink: 0, overflowX: "auto", fontFamily: "monospace", fontSize: 10,
+      }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "max-content" }}>
+          <tbody>
+            {[
+              { label: "delta",         get: (s) => s.delta,    color: (v) => v >= 0 ? "#4488ee" : "#ee5577", fmtSign: true },
+              { label: "Ask Vol",       get: (s) => s.ask,      color: () => "#5ee07a" },
+              { label: "Bid Vol",       get: (s) => s.bid,      color: () => "#ef8888" },
+              { label: "Max",           get: (s) => s.max,      color: () => "#c0c0d0" },
+              { label: "Min",           get: (s) => s.min,      color: () => "#888" },
+              { label: "delta / vol",   get: (s) => s.deltaVol, color: (v) => v >= 0 ? "#4488ee" : "#ee5577", pct: true },
+              { label: "Num Trades",    get: (s) => s.trades,   color: () => "#a0a0c0" },
+              { label: "avg trade vol", get: (s) => s.avgTrade, color: () => "#c0c0d0" },
+              { label: "vol",           get: (s) => s.vol,      color: () => "#9090a0", bold: true },
+            ].map((row) => (
+              <tr key={row.label} style={{ borderBottom: "1px solid #14141c" }}>
+                <td style={{
+                  background: "#0c0c14", color: "#666", padding: "1px 8px",
+                  textAlign: "right", fontSize: 9, fontFamily: "sans-serif",
+                  borderRight: "1px solid #1a1a28", minWidth: 96, whiteSpace: "nowrap",
+                  position: "sticky", left: 0, zIndex: 1,
+                }}>
+                  {row.label}
+                </td>
+                {statsBuckets.map((s) => {
+                  const val = row.get(s);
+                  const colored = row.color(val);
+                  const display = row.pct
+                    ? `${val >= 0 ? "+" : ""}${(val * 100).toFixed(1)}%`
+                    : row.fmtSign
+                      ? `${val > 0 ? "+" : ""}${fmt(val)}`
+                      : fmt(val);
+                  return (
+                    <td key={s.bucket} style={{
+                      padding: "1px 6px", textAlign: "center", minWidth: 56,
+                      color: colored, fontWeight: row.bold ? 700 : 500,
+                      borderRight: "1px solid #14141c",
+                    }}>
+                      {display}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+            {/* Time row */}
+            <tr style={{ background: "#0c0c14" }}>
+              <td style={{
+                color: "#555", padding: "2px 8px", textAlign: "right",
+                fontSize: 9, fontFamily: "sans-serif",
+                borderRight: "1px solid #1a1a28", position: "sticky", left: 0, zIndex: 1,
+              }}>
+                {now.toISOString().slice(0, 10)}
+              </td>
+              {statsBuckets.map((s, i) => (
+                <td key={s.bucket} style={{
+                  padding: "2px 6px", textAlign: "center", color: i === statsBuckets.length - 1 ? "#4488ff" : "#555",
+                  fontSize: 9, fontFamily: "sans-serif", borderRight: "1px solid #14141c",
+                  fontWeight: i === statsBuckets.length - 1 ? 700 : 400,
+                }}>
+                  {s.time}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* ─────────────────── 8. BOTTOM CHART TABS ─────────────────── */}
+      <div style={{
+        background: "#10101a", borderTop: "1px solid #1a1a28",
+        display: "flex", alignItems: "stretch", fontFamily: "sans-serif", fontSize: 10,
+        flexShrink: 0,
+      }}>
+        <div style={{
+          padding: "3px 14px", background: "#0a0a10",
+          color: "#9bbdff", borderRight: "1px solid #1a1a28",
+          fontWeight: 700, borderTop: "2px solid #4a8cff",
+        }}>
+          {ticker.replace("USDT", "/USDT")} · {timeframe} Footprint
+        </div>
+        <div style={{ flex: 1 }} />
+        <div style={{ padding: "3px 12px", color: "#666", fontSize: 9 }}>
+          {symbols.length > 0 ? `${symbols.length} symbols loaded` : "Loading symbols…"}
+        </div>
+      </div>
+
+      {/* ─────────────────── 9. STATUS BAR ─────────────────── */}
+      <div style={{
+        background: "#0c0c14", borderTop: "1px solid #1a1a28",
+        padding: "2px 10px", display: "flex", alignItems: "center", gap: 14,
+        fontFamily: "sans-serif", fontSize: 9, color: "#666", flexShrink: 0,
+      }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          {status === "connected"
+            ? <Wifi size={9} style={{ color: "#22c55e" }} />
+            : <WifiOff size={9} style={{ color: "#666" }} />}
+          <span style={{ color: status === "connected" ? "#22c55e" : "#888" }}>
+            {status === "connected" ? "Binance WS · live" : "Disconnected"}
+          </span>
+        </span>
+        <span>·</span>
+        <span>Buckets: <span style={{ color: "#aaa" }}>{Object.keys(candlesRef.current || {}).length}</span></span>
+        <span>·</span>
+        <span>Trades: <span style={{ color: "#aaa" }}>{rawTradesRef.current?.length || 0}</span></span>
+        <span>·</span>
+        <span>Tick: <span style={{ color: "#aaa" }}>{TICK}</span></span>
+        <span style={{ marginLeft: "auto" }}>
+          Next candle: <span style={{ color: "#60a5fa", fontWeight: 600 }}>{countdown}</span>
+        </span>
+        <span>·</span>
+        <span style={{ color: "#888" }}>{now.toLocaleTimeString()}</span>
       </div>
     </div>
   );
