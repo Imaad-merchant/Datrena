@@ -1,0 +1,27 @@
+# Vercel only needs the web app — exclude everything else
+
+# Build artifacts and binaries
+release/
+dist/
+*.dmg
+*.zip
+*.exe
+
+# Local server (not deployed to Vercel)
+server/
+electron/
+
+# Local data
+.claude/
+.git/
+node_modules/
+
+# Other projects in this repo
+Ecommerce/
+skills/
+
+# Local data files
+*.parquet
+*.log
+.env
+.env.*
