@@ -3,7 +3,6 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -n vite,api -c cyan,magenta \"vite\" \"npm --prefix server run api\"",
     "dev:vite": "vite",
@@ -12,48 +11,7 @@
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",
-    "preview": "vite preview",
-    "electron:dev": "concurrently -n vite,electron -c cyan,yellow \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
-    "electron:build": "vite build && electron-builder",
-    "electron:build:mac": "vite build && electron-builder --mac",
-    "electron:build:win": "vite build && electron-builder --win",
-    "electron:pack": "vite build && electron-builder --dir"
-  },
-  "build": {
-    "appId": "com.datrena.app",
-    "productName": "Datrena",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "package.json"
-    ],
-    "protocols": [
-      {
-        "name": "Datrena Protocol",
-        "schemes": ["datrena"]
-      }
-    ],
-    "mac": {
-      "category": "public.app-category.finance",
-      "target": [
-        { "target": "zip", "arch": ["arm64", "x64"] }
-      ]
-    },
-    "win": {
-      "target": [
-        { "target": "nsis", "arch": ["x64"] }
-      ],
-      "icon": "build/icon.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true
-    },
-    "publish": null
+    "preview": "vite preview"
   },
   "dependencies": {
     "@base44/sdk": "^0.8.25",

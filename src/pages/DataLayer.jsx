@@ -1,10 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { RefreshCw, Wifi, WifiOff, ChevronsRight, ChevronDown, Layers, Eye, EyeOff, Lock } from "lucide-react";
+import { RefreshCw, Wifi, WifiOff, ChevronsRight, ChevronDown, Layers, Eye, EyeOff } from "lucide-react";
 import MainNav from "../components/navigation/MainNav";
-import DesktopGate from "../components/DesktopGate";
-import { useLicense } from "../lib/LicenseContext";
-import { useWorkspace } from "../lib/WorkspaceContext";
-import { TIERS } from "../lib/tiers";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 // Binance live data — direct WebSocket from the desktop app.
@@ -169,19 +165,12 @@ const OVERLAY_DEFS = [
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function DataLayer() {
-  const { features: planFeatures, tier: userTier } = useLicense();
-  const { symbol: ctxSymbol, setSymbol: setCtxSymbol } = useWorkspace();
-
   const [status,    setStatus]    = useState("disconnected");
-  // Symbol is sourced from WorkspaceContext so it stays linked to the Watchlist panel.
-  // Local setTicker writes back to context so other panels see the change.
-  const ticker = ctxSymbol;
-  const setTicker = setCtxSymbol;
+  const [ticker,    setTicker]    = useState("BTCUSDT");
   const [timeframe, setTimeframe] = useState("5m");
   const [symbols,   setSymbols]   = useState([]); // all Binance USDT pairs
   const [tickerQuery, setTickerQuery] = useState("BTCUSDT");
   const [showTickerMenu, setShowTickerMenu] = useState(false);
-  const [paywall, setPaywall] = useState(null); // { feature, requires } | null
   const [dataMode,  setDataMode]  = useState("demo");
   const [countdown, setCountdown] = useState("");
   const [showSnap,  setShowSnap]  = useState(false);
@@ -1228,7 +1217,6 @@ export default function DataLayer() {
   const barColor = barUp ? "#22c55e" : "#ef4444";
 
   return (
-    <DesktopGate title="Datrena Charting">
     <div style={{ height: "100vh", background: "#0a0a10", display: "flex", flexDirection: "column", fontFamily: "monospace", paddingLeft: "4rem" }}>
       <MainNav />
 
@@ -1267,32 +1255,17 @@ export default function DataLayer() {
           </div>
         )}
 
-        {/* Timeframe dropdown — locked timeframes paywall */}
+        {/* Timeframe dropdown */}
         <select
           value={timeframe}
-          onChange={(e) => {
-            const v = e.target.value;
-            if (!planFeatures.timeframes.includes(v)) {
-              const requires = TIERS.pro.features.timeframes.includes(v) ? "pro" : "elite";
-              setPaywall({ feature: `${v} timeframe`, requires });
-              return;
-            }
-            setTimeframe(v);
-          }}
+          onChange={(e) => setTimeframe(e.target.value)}
           style={{
             background: "#0c0c14", border: "1px solid #1a1a2c", color: "#60a5fa",
             borderRadius: 3, padding: "3px 6px", fontSize: 10, fontFamily: "sans-serif",
             cursor: "pointer", fontWeight: 600,
           }}
         >
-          {TIMEFRAMES.map(tf => {
-            const locked = !planFeatures.timeframes.includes(tf);
-            return (
-              <option key={tf} value={tf}>
-                {tf}{locked ? "  🔒" : ""}
-              </option>
-            );
-          })}
+          {TIMEFRAMES.map(tf => <option key={tf} value={tf}>{tf}</option>)}
         </select>
 
         {/* Countdown */}
@@ -1323,40 +1296,28 @@ export default function DataLayer() {
               minWidth: 180, maxHeight: 280, overflowY: "auto",
               boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
             }}>
-              {filteredSymbols.map((s) => {
-                // Free tier: only the default symbol (BTCUSDT) is unlocked
-                const locked = planFeatures.maxSymbols !== Infinity && s.symbol !== "BTCUSDT";
-                return (
-                  <button
-                    key={s.symbol}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      if (locked) {
-                        setPaywall({ feature: "Multi-symbol charting", requires: "pro" });
-                        setShowTickerMenu(false);
-                        return;
-                      }
-                      setTicker(s.symbol);
-                      setTickerQuery(s.symbol);
-                      setShowTickerMenu(false);
-                    }}
-                    style={{
-                      display: "flex", justifyContent: "space-between", alignItems: "center",
-                      width: "100%", padding: "6px 10px", background: s.symbol === ticker ? "#152040" : "none",
-                      border: "none", color: locked ? "#404058" : "#c0c0d8", fontSize: 11, fontFamily: "monospace",
-                      cursor: "pointer", textAlign: "left",
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = "#1a1a2c"}
-                    onMouseLeave={(e) => e.currentTarget.style.background = s.symbol === ticker ? "#152040" : "transparent"}
-                  >
-                    <span style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-                      {s.base}<span style={{ color: "#5a5a6c" }}>/{s.quote}</span>
-                      {locked && <Lock size={9} style={{ color: "#f59e0b", marginLeft: 4 }} />}
-                    </span>
-                    <span style={{ color: "#404058", fontSize: 9 }}>{s.symbol}</span>
-                  </button>
-                );
-              })}
+              {filteredSymbols.map((s) => (
+                <button
+                  key={s.symbol}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setTicker(s.symbol);
+                    setTickerQuery(s.symbol);
+                    setShowTickerMenu(false);
+                  }}
+                  style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    width: "100%", padding: "6px 10px", background: s.symbol === ticker ? "#152040" : "none",
+                    border: "none", color: "#c0c0d8", fontSize: 11, fontFamily: "monospace",
+                    cursor: "pointer", textAlign: "left",
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = "#1a1a2c"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = s.symbol === ticker ? "#152040" : "transparent"}
+                >
+                  <span style={{ fontWeight: 600 }}>{s.base}<span style={{ color: "#5a5a6c" }}>/{s.quote}</span></span>
+                  <span style={{ color: "#404058", fontSize: 9 }}>{s.symbol}</span>
+                </button>
+              ))}
               {symbols.length > 0 && filteredSymbols.length === 100 && (
                 <div style={{ padding: "6px 10px", fontSize: 9, color: "#404058", borderTop: "1px solid #252538" }}>
                   Showing first 100 of {symbols.length} matches — refine search
@@ -1390,44 +1351,23 @@ export default function DataLayer() {
               background: "#10101a", border: "1px solid #252538", borderRadius: 6,
               padding: "4px 0", minWidth: 230, boxShadow: "0 4px 16px rgba(0,0,0,0.6)",
             }}>
-              {OVERLAY_DEFS.map(d => {
-                const allowed = planFeatures.mboOverlays.includes(d.key);
-                // Determine the lowest tier that grants this overlay
-                const requires = ["pro", "elite"].find((tk) =>
-                  TIERS[tk]?.features.mboOverlays.includes(d.key)
-                ) || "elite";
-                return (
-                  <button
-                    key={d.key}
-                    onClick={() => {
-                      if (!allowed) {
-                        setPaywall({ feature: d.label, requires });
-                        setShowOverlayMenu(false);
-                        return;
-                      }
-                      setOverlays(prev => ({ ...prev, [d.key]: !prev[d.key] }));
-                    }}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 8, width: "100%",
-                      padding: "7px 12px", background: "none", border: "none",
-                      color: !allowed ? "#404058" : overlays[d.key] ? "#c0c0d8" : "#606078",
-                      fontSize: 11, fontFamily: "sans-serif", cursor: "pointer", textAlign: "left",
-                    }}
-                  >
-                    {!allowed
-                      ? <Lock size={12} style={{ color: "#f59e0b" }} />
-                      : overlays[d.key]
-                        ? <Eye size={12} style={{ color: "#22c55e" }} />
-                        : <EyeOff size={12} style={{ color: "#303040" }} />}
-                    <span style={{ flex: 1 }}>{d.label}</span>
-                    {!allowed && (
-                      <span style={{ color: "#f59e0b", fontSize: 9, fontWeight: 600, letterSpacing: 0.5 }}>
-                        {requires.toUpperCase()}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+              {OVERLAY_DEFS.map(d => (
+                <button
+                  key={d.key}
+                  onClick={() => setOverlays(prev => ({ ...prev, [d.key]: !prev[d.key] }))}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8, width: "100%",
+                    padding: "7px 12px", background: "none", border: "none",
+                    color: overlays[d.key] ? "#c0c0d8" : "#606078",
+                    fontSize: 11, fontFamily: "sans-serif", cursor: "pointer", textAlign: "left",
+                  }}
+                >
+                  {overlays[d.key]
+                    ? <Eye size={12} style={{ color: "#22c55e" }} />
+                    : <EyeOff size={12} style={{ color: "#303040" }} />}
+                  <span style={{ flex: 1 }}>{d.label}</span>
+                </button>
+              ))}
             </div>
           )}
         </div>
@@ -1437,22 +1377,8 @@ export default function DataLayer() {
           <RefreshCw size={12} />
         </button>
 
-        {/* Right side: status + tier badge */}
+        {/* Right side: status */}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, fontFamily: "sans-serif" }}>
-          {/* Tier badge — clickable to upgrade */}
-          <button
-            onClick={() => { window.location.href = "/Pricing"; }}
-            style={{
-              background: userTier.key === "free" ? "#1a1400" : userTier.key === "pro" ? "#0c1020" : "#1a0c20",
-              border: `1px solid ${userTier.key === "free" ? "#453000" : userTier.key === "pro" ? "#152040" : "#3a1a4a"}`,
-              color: userTier.key === "free" ? "#f59e0b" : userTier.key === "pro" ? "#60a5fa" : "#c084fc",
-              fontSize: 9, fontWeight: 700, letterSpacing: 0.5, padding: "2px 7px",
-              borderRadius: 3, cursor: "pointer", textTransform: "uppercase",
-            }}
-            title={userTier.key === "elite" ? "You're on Elite" : `Click to upgrade — ${userTier.name} plan`}
-          >
-            {userTier.name}
-          </button>
           {dataMode === "demo" && (
             <span style={{ color: "#f59e0b", fontSize: 9, padding: "1px 6px", border: "1px solid #453000", borderRadius: 3, background: "#1a1500" }}>
               DEMO
@@ -1468,65 +1394,6 @@ export default function DataLayer() {
           </div>
         </div>
       </div>
-
-      {/* Paywall modal — appears when a free user clicks a locked feature */}
-      {paywall && (
-        <div
-          onClick={() => setPaywall(null)}
-          style={{
-            position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000,
-            display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
-            backdropFilter: "blur(4px)",
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "#0a0a10", border: "1px solid #252538", borderRadius: 12,
-              padding: "32px 36px", maxWidth: 440, width: "100%",
-              fontFamily: "sans-serif",
-            }}
-          >
-            <div style={{
-              display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px",
-              borderRadius: 999, background: "#1a1400", border: "1px solid #453000",
-              color: "#f59e0b", fontSize: 10, fontWeight: 700, letterSpacing: 0.5,
-              marginBottom: 14, textTransform: "uppercase",
-            }}>
-              {TIERS[paywall.requires].name} feature
-            </div>
-            <h3 style={{ fontSize: 20, fontWeight: 500, margin: 0, marginBottom: 10, color: "#fafafa" }}>
-              {paywall.feature} is on {TIERS[paywall.requires].name}
-            </h3>
-            <p style={{ color: "#7a7a8c", fontSize: 13, lineHeight: 1.55, marginBottom: 22 }}>
-              You're currently on the <strong style={{ color: "#c0c0d8" }}>{userTier.name}</strong> plan.
-              Upgrade to {TIERS[paywall.requires].name} for{" "}
-              <strong style={{ color: "#fafafa" }}>{TIERS[paywall.requires].priceLabel}/{TIERS[paywall.requires].interval}</strong>
-              {" "}to unlock this and more.
-            </p>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                onClick={() => { window.location.href = "/Pricing"; }}
-                style={{
-                  flex: 1, background: "#fafafa", color: "#0a0a10", border: "none",
-                  borderRadius: 6, padding: "10px 22px", fontSize: 13, fontWeight: 600, cursor: "pointer",
-                }}
-              >
-                {TIERS[paywall.requires].cta}
-              </button>
-              <button
-                onClick={() => setPaywall(null)}
-                style={{
-                  background: "transparent", color: "#7a7a8c", border: "1px solid #252538",
-                  borderRadius: 6, padding: "10px 18px", fontSize: 13, fontWeight: 500, cursor: "pointer",
-                }}
-              >
-                Maybe later
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Canvas ── */}
       <div ref={containerRef} style={{ flex: 1, position: "relative", overflow: "hidden" }}>
@@ -1549,6 +1416,5 @@ export default function DataLayer() {
         )}
       </div>
     </div>
-    </DesktopGate>
   );
 }

@@ -1,17 +1,12 @@
 import { Toaster } from "@/components/ui/toaster"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
-import { pagesConfig } from './pages.config'
-import { BrowserRouter, HashRouter, Route, Routes, Navigate } from 'react-router-dom';
-
-// Use HashRouter inside Electron (file:// protocol), BrowserRouter on the web
-const Router = (typeof window !== 'undefined' && window.datrena?.isElectron) ? HashRouter : BrowserRouter;
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { PlanProvider } from '@/lib/PlanContext';
 import { useSecretAccess } from '@/hooks/useSecretAccess';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
-import QuantHome from './pages/QuantHome';
 import Landing from './pages/Landing';
 import Pricing from './pages/Pricing';
 import Features from './pages/Features';
@@ -22,30 +17,7 @@ import Checkout from './pages/Checkout';
 import SignIn from './pages/SignIn';
 import Backtesting from './pages/Backtesting';
 import Download from './pages/Download';
-import Activation from './pages/Activation';
-import { LicenseProvider, useLicense } from '@/lib/LicenseContext';
-import { WorkspaceProvider } from '@/lib/WorkspaceContext';
-import Workspace from './pages/Workspace';
-import Connections from './pages/Connections';
-import PublicConnections from './pages/PublicConnections';
 import AdminWaitlist from './pages/AdminWaitlist';
-
-const { Pages, Layout, mainPage } = pagesConfig;
-const mainPageKey = mainPage ?? Object.keys(Pages)[0];
-const MainPage = mainPageKey ? Pages[mainPageKey] : <></>;
-
-const LayoutWrapper = ({ children, currentPageName }) => Layout ?
-  <Layout currentPageName={currentPageName}>{children}</Layout>
-  : <>{children}</>;
-
-// Inside Electron, the very first thing the user sees is the Activation screen
-// (email-based sign-in). Once they've signed in, the email persists via
-// localStorage and they go straight to the app on subsequent launches.
-const ElectronGate = ({ children }) => {
-  const { email, isElectron } = useLicense();
-  if (isElectron && !email) return <Activation />;
-  return children;
-};
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, user } = useAuth();
@@ -54,7 +26,6 @@ const AuthenticatedApp = () => {
   // Treat admin as authenticated
   const isAuthenticated = !!user || isAdmin;
 
-  // Show loading spinner while checking app public settings or auth
   if (isLoadingPublicSettings || (isLoadingAuth && !isAdmin)) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-black">
@@ -68,50 +39,33 @@ const AuthenticatedApp = () => {
 
   return (
     <Routes>
+      {/* Public marketing routes */}
       <Route path="/" element={<Landing />} />
       <Route path="/Home" element={<Landing />} />
       <Route path="/Pricing" element={<Pricing />} />
       <Route path="/Features" element={<Features />} />
       <Route path="/ForgeLabs" element={<ForgeLabs />} />
-      <Route path="/GithubPRs" element={<GithubPRs />} />
-      <Route path="/DataLayer" element={<DataLayer />} />
-      <Route path="/Checkout" element={<Checkout />} />
-      <Route path="/SignIn" element={<SignIn />} />
-      <Route path="/Backtesting" element={<Backtesting />} />
       <Route path="/Download" element={<Download />} />
       <Route path="/Waitlist" element={<Download />} />
-      <Route path="/Workspace" element={<Workspace />} />
-      {/* Public marketing /Connections page (datrena.com/Connections) */}
-      <Route path="/Connections" element={<PublicConnections />} />
-      {/* In-app data-feed manager — only reachable from inside the desktop app */}
-      <Route path="/AppConnections" element={<Connections />} />
-      {isAuthenticated && <Route path="/Admin/Waitlist" element={<AdminWaitlist />} />}
+      <Route path="/SignIn" element={<SignIn />} />
+      <Route path="/Checkout" element={<Checkout />} />
+      <Route path="/GithubPRs" element={<GithubPRs />} />
 
-      {/* Authenticated routes — accessible via login OR Shift+Z */}
+      {/* Auth-only: chart, backtesting, admin */}
       {isAuthenticated ? (
         <>
-          <Route path="/QuantHome" element={<Workspace />} />
-          <Route path="/Pricing" element={<Pricing />} />
-          {Object.entries(Pages).map(([path, Page]) => (
-            <Route
-              key={path}
-              path={`/${path}`}
-              element={
-                <LayoutWrapper currentPageName={path}>
-                  <Page />
-                </LayoutWrapper>
-              }
-            />
-          ))}
+          <Route path="/DataLayer" element={<DataLayer />} />
+          <Route path="/QuantHome" element={<Navigate to="/DataLayer" replace />} />
+          <Route path="/Backtesting" element={<Backtesting />} />
+          <Route path="/Admin/Waitlist" element={<AdminWaitlist />} />
         </>
       ) : (
         <>
+          <Route path="/DataLayer" element={<Navigate to="/" replace />} />
           <Route path="/QuantHome" element={<Navigate to="/" replace />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
         </>
       )}
 
-      {/* Handle user not registered error */}
       {authError?.type === 'user_not_registered' && (
         <Route path="*" element={<UserNotRegisteredError />} />
       )}
@@ -121,24 +75,16 @@ const AuthenticatedApp = () => {
   );
 };
 
-
 function App() {
-
   return (
     <AuthProvider>
       <PlanProvider>
-        <LicenseProvider>
-        <WorkspaceProvider>
         <QueryClientProvider client={queryClientInstance}>
           <Router>
-            <ElectronGate>
-              <AuthenticatedApp />
-            </ElectronGate>
+            <AuthenticatedApp />
           </Router>
           <Toaster />
         </QueryClientProvider>
-        </WorkspaceProvider>
-        </LicenseProvider>
       </PlanProvider>
     </AuthProvider>
   )
