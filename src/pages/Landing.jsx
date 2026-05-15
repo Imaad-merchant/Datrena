@@ -159,9 +159,10 @@ export default function Landing() {
       <section className="border-t border-gray-800/60 bg-gray-950/30">
         <div className="max-w-[1400px] mx-auto w-full px-6 lg:px-16 py-24">
           <div className="text-center mb-14">
-            <h2 className="text-2xl lg:text-3xl font-bold text-white mb-3">From Data to Production</h2>
+            <h2 className="text-2xl lg:text-3xl font-bold text-white mb-3">Read the Order Book</h2>
             <p className="text-gray-400 text-sm max-w-xl mx-auto">
-              Live market data, cloud research, and institutional-grade backtesting. Everything a quant needs in one platform.
+              Live exchange data, footprint charts, and seven order-flow overlays.
+              Everything a quant needs to read tape, in one platform.
             </p>
           </div>
 
