@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   RefreshCw, Wifi, WifiOff, ChevronsRight, ChevronDown, Layers, Eye, EyeOff,
   Search, Save, FolderOpen, X as XIcon, MousePointer, PenTool, Type, Minus,
-  Activity, Clock, FileText, MessageSquare, Briefcase, Settings,
+  Activity, FileText, MessageSquare, Briefcase, Settings,
   ChevronLeft as CLeft, ChevronRight as CRight, ChevronsLeft, ChevronUp,
   Maximize2, Plus,
 } from "lucide-react";
@@ -1907,12 +1907,6 @@ export default function DataLayer() {
         <ToolBtn label="Values" icon={FileText} active={showValuesWin} onClick={() => setShowValuesWin(!showValuesWin)} />
         <ToolBtn label="Msgs" icon={MessageSquare} active={showMsgLog} onClick={() => setShowMsgLog(!showMsgLog)} />
         <ToolBtn label="Position" icon={Briefcase} disabled />
-        <ToolDivider />
-
-        {/* Timeframes */}
-        {["1m", "5m", "15m", "30m", "1h", "4h", "D"].map((tf) => (
-          <ToolBtn key={tf} label={tf} icon={Clock} active={timeframe === tf} onClick={() => setTimeframe(tf)} />
-        ))}
         <ToolDivider />
 
         {/* Page */}
