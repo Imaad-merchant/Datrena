@@ -3,6 +3,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClientInstance } from '@/lib/query-client'
 import { pagesConfig } from './pages.config'
 import { BrowserRouter, HashRouter, Route, Routes, Navigate } from 'react-router-dom';
+import { Analytics } from '@vercel/analytics/react';
 
 // Use HashRouter inside Electron (file:// protocol), BrowserRouter on the web
 const Router = (typeof window !== 'undefined' && window.datrena?.isElectron) ? HashRouter : BrowserRouter;
@@ -136,6 +137,7 @@ function App() {
             </ElectronGate>
           </Router>
           <Toaster />
+          <Analytics />
         </QueryClientProvider>
         </WorkspaceProvider>
         </LicenseProvider>
