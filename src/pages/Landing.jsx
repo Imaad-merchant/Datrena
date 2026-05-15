@@ -208,7 +208,7 @@ export default function Landing() {
         <div className="max-w-[1400px] mx-auto w-full px-6 lg:px-16 py-20">
           <h2 className="text-2xl font-bold text-white mb-3">How Datrena Compares</h2>
           <p className="text-gray-500 text-sm mb-8 max-w-lg">
-            Purpose-built for quantitative trading research. Not a general charting platform with add-ons.
+            Built specifically for order flow analysis. Not a general charting platform with add-ons.
           </p>
           <Card className="bg-gray-900 border-gray-800 rounded-xl overflow-hidden">
             <Table>
@@ -245,7 +245,7 @@ export default function Landing() {
       <section className="border-t border-gray-800/60 bg-gray-950/30">
         <div className="max-w-[1400px] mx-auto w-full px-6 lg:px-16 py-20">
           <h2 className="text-2xl font-bold text-white mb-3">FAQ</h2>
-          <p className="text-gray-500 text-sm mb-8">Common questions about data, research, and backtesting.</p>
+          <p className="text-gray-500 text-sm mb-8">Common questions about data, charting, and connecting your feed.</p>
           <div className="max-w-2xl">
             <Accordion type="single" collapsible>
               {FAQ.map((item, i) => (
@@ -264,7 +264,7 @@ export default function Landing() {
         <div className="max-w-[1400px] mx-auto w-full px-6 lg:px-16 py-24 text-center">
           <h2 className="text-2xl lg:text-3xl font-bold text-white mb-4">Ready to see what's behind the price?</h2>
           <p className="text-gray-400 text-sm mb-10 max-w-md mx-auto">
-            Stop guessing. Start reading the order flow. Get access to live Level 3 data, cloud research, and backtesting today.
+            Stop guessing. Start reading the order flow. Get on the early-access list for live Level 3 footprint charting today.
           </p>
           <div className="flex items-center justify-center gap-4">
             <Button asChild className="bg-white text-black hover:bg-gray-200 text-sm font-semibold px-8 h-12 rounded-lg gap-2">
