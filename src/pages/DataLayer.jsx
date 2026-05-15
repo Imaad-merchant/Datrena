@@ -19,10 +19,10 @@ const IMB = 3;
 
 const VOL_W   = 52;
 const PRICE_W = 58;
-const SUM_ROWS  = 3;
-const SUM_ROW_H = 20;
+// Canvas footer is just the time axis now — the per-bar delta/vol stats
+// live in the HTML stats grid below the canvas (no duplication).
 const TIME_H    = 22;
-const FOOTER_H  = SUM_ROWS * SUM_ROW_H + TIME_H;
+const FOOTER_H  = TIME_H;
 
 // Zoom — effectively unlimited
 const MIN_CW = 2;
@@ -182,6 +182,58 @@ export default function DataLayer() {
   const [workspaceTabs, setWorkspaceTabs] = useState(["BTCUSDT", "ETHUSDT", "SOLUSDT"]);
   const [statsTick, setStatsTick] = useState(0); // forces stats panel re-render
   const [now, setNow] = useState(new Date());
+
+  // Drawing tools
+  const [drawMode, setDrawMode] = useState("pointer"); // pointer | trendline | hline | text
+  const [drawings, setDrawings] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("datrena_drawings") || "[]"); } catch { return []; }
+  });
+  const drawingInProgress = useRef(null); // { type, points: [...] } while user is creating
+  const drawingsRef = useRef(drawings);
+  useEffect(() => { drawingsRef.current = drawings; }, [drawings]);
+  useEffect(() => {
+    try { localStorage.setItem("datrena_drawings", JSON.stringify(drawings)); } catch {}
+  }, [drawings]);
+  const drawModeRef = useRef(drawMode);
+  useEffect(() => { drawModeRef.current = drawMode; }, [drawMode]);
+
+  // Modals
+  const [showValuesWin, setShowValuesWin] = useState(false);
+  const [showMsgLog, setShowMsgLog] = useState(false);
+  const [showReplay, setShowReplay] = useState(false);
+  const [showWorkspaceSave, setShowWorkspaceSave] = useState(false);
+  const [showWorkspaceOpen, setShowWorkspaceOpen] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
+
+  // Saved workspaces
+  const [savedWorkspaces, setSavedWorkspaces] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("datrena_workspaces") || "{}"); } catch { return {}; }
+  });
+  const [wsNameInput, setWsNameInput] = useState("");
+
+  // Message log
+  const [msgLog, setMsgLog] = useState([]);
+  const logMsgRef = useRef(null);
+  // Provide a stable logger fn that pushes into msgLog
+  if (!logMsgRef.current) {
+    logMsgRef.current = (level, text) => {
+      setMsgLog((prev) => [
+        { time: new Date(), level, text },
+        ...prev,
+      ].slice(0, 200));
+    };
+  }
+
+  // Connection pause/resume (when paused, the WS is closed and not reconnected)
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(paused);
+  useEffect(() => { pausedRef.current = paused; }, [paused]);
+
+  // DEMO/Live override
+  const [forceDemo, setForceDemo] = useState(false);
+
+  // Replay state — when active, the chart paints from a slice of history
+  const [replay, setReplay] = useState({ active: false, playing: false, idx: 0, speed: 1 });
   const [dataMode,  setDataMode]  = useState("demo");
   const [countdown, setCountdown] = useState("");
   const [showSnap,  setShowSnap]  = useState(false);
@@ -193,6 +245,9 @@ export default function DataLayer() {
   });
 
   const hoverBarRef    = useRef(null);
+  // Snapshot of latest draw() state — lets mouse handlers convert screen
+  // coordinates to data coordinates (bucket index, price level).
+  const drawDataRef    = useRef({ buckets: [], allPrices: [], topP: 0 });
   const canvasRef      = useRef(null);
   const containerRef   = useRef(null);
   const candlesRef     = useRef({});
@@ -222,6 +277,9 @@ export default function DataLayer() {
     return () => clearInterval(iv);
   }, []);
 
+  // Replay effects are declared AFTER scheduleDraw is initialized — see
+  // below the useCallback declarations.
+
   // Close any open menu when clicking outside
   useEffect(() => {
     if (!openMenu) return;
@@ -233,6 +291,24 @@ export default function DataLayer() {
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [openMenu]);
+
+  // Escape exits drawing mode + closes modals
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      if (drawingInProgress.current) drawingInProgress.current = null;
+      setDrawMode("pointer");
+      setShowValuesWin(false);
+      setShowMsgLog(false);
+      setShowReplay(false);
+      setShowWorkspaceSave(false);
+      setShowWorkspaceOpen(false);
+      setShowAbout(false);
+      setOpenMenu(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Fetch every active Binance trading pair on mount (cached for the session)
   useEffect(() => {
@@ -324,6 +400,9 @@ export default function DataLayer() {
     const topP = allPrices[0];
     const priceToY = (p) => ((topP - p) / TICK) * cH - v.scrollY;
 
+    // Snapshot for mouse-handler coordinate conversion + drawing rendering
+    drawDataRef.current = { buckets, allPrices, topP, cW, cH, scrollX: v.scrollX, scrollY: v.scrollY };
+
     // Auto-scroll
     if (!v.userScrolled) {
       v.scrollX = Math.max(0, totalW - vpW);
@@ -352,17 +431,6 @@ export default function DataLayer() {
     buckets.forEach(b => Object.entries(can[b] || {}).forEach(([p, c]) => { vp[p] = (vp[p] || 0) + c.b + c.a; }));
     const maxV = Math.max(...Object.values(vp), 1);
     const pocP = allPrices.reduce((best, p) => (vp[p] || 0) > (vp[best] || 0) ? p : best, allPrices[0]);
-
-    // Per-candle summaries
-    let cumD = 0;
-    const sums = buckets.map(b => {
-      const cells = can[b] || {};
-      let ask = 0, bid = 0;
-      Object.values(cells).forEach(c => { ask += c.a; bid += c.b; });
-      const delta = ask - bid;
-      cumD += delta;
-      return { ask, bid, delta, cumD, vol: ask + bid };
-    });
 
     const showText = cW >= 20 && cH >= 10;
     const fs = Math.min(14, Math.max(8, Math.floor(cH * 0.45)));
@@ -644,6 +712,81 @@ export default function DataLayer() {
       }
     }
 
+    // ── User drawings (hline, trendline, text) ──
+    {
+      const userDrawings = drawingsRef.current || [];
+      const bucketX = (bk) => {
+        const i = buckets.indexOf(bk);
+        if (i < 0) return null;
+        return VOL_W + i * cW - v.scrollX + cW / 2;
+      };
+      userDrawings.forEach((d) => {
+        ctx.strokeStyle = d.color || "#f59e0b";
+        ctx.fillStyle = d.color || "#f59e0b";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([]);
+        if (d.type === "hline") {
+          const y = priceToY(d.price) + cH / 2;
+          if (y >= 0 && y < vpH) {
+            ctx.beginPath();
+            ctx.moveTo(VOL_W, y);
+            ctx.lineTo(VOL_W + vpW, y);
+            ctx.stroke();
+            ctx.font = "10px monospace";
+            ctx.fillText(d.price.toFixed(2), VOL_W + 4, y - 3);
+          }
+        } else if (d.type === "trendline" && d.from && d.to) {
+          const x1 = bucketX(d.from.bucket);
+          const x2 = bucketX(d.to.bucket);
+          if (x1 !== null && x2 !== null) {
+            const y1 = priceToY(d.from.price) + cH / 2;
+            const y2 = priceToY(d.to.price) + cH / 2;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+            // Endpoint dots
+            ctx.beginPath();
+            ctx.arc(x1, y1, 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(x2, y2, 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else if (d.type === "text") {
+          const x = bucketX(d.bucket);
+          if (x !== null) {
+            const y = priceToY(d.price) + cH / 2;
+            ctx.font = "bold 11px sans-serif";
+            ctx.textBaseline = "middle";
+            const w = ctx.measureText(d.text).width + 8;
+            ctx.fillStyle = "rgba(245,158,11,0.15)";
+            ctx.fillRect(x - w / 2, y - 8, w, 16);
+            ctx.fillStyle = d.color || "#f59e0b";
+            ctx.textAlign = "center";
+            ctx.fillText(d.text, x, y);
+          }
+        }
+      });
+
+      // In-progress trendline preview
+      const inProg = drawingInProgress.current;
+      if (inProg && inProg.type === "trendline" && inProg.from && v.mouseX >= VOL_W && v.mouseY >= 0) {
+        const x1 = bucketX(inProg.from.bucket);
+        const y1 = priceToY(inProg.from.price) + cH / 2;
+        if (x1 !== null) {
+          ctx.strokeStyle = "rgba(245,158,11,0.6)";
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(v.mouseX, v.mouseY);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+    }
+
     // ── Crosshair ──
     if (v.mouseX >= VOL_W && v.mouseX < VOL_W + vpW && v.mouseY >= 0 && v.mouseY < vpH) {
       ctx.strokeStyle = "rgba(255,255,255,0.1)";
@@ -781,68 +924,14 @@ export default function DataLayer() {
     ctx.stroke();
 
     // ════════════════════════════════════════════════════════════════════════
-    //  SUMMARY FOOTER
+    //  TIME AXIS
     // ════════════════════════════════════════════════════════════════════════
-    const sumY = vpH;
-    ctx.fillStyle = "#08080e";
-    ctx.fillRect(0, sumY, W, FOOTER_H);
-    ctx.strokeStyle = "#252538";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, sumY + 0.5);
-    ctx.lineTo(W, sumY + 0.5);
-    ctx.stroke();
-
-    const labels = [["Delta", "#4477ee"], ["Cum.Δ", "#bb66bb"], ["Vol", "#666"]];
-    labels.forEach(([lbl, col], si) => {
-      const ry = sumY + si * SUM_ROW_H;
-      ctx.fillStyle = "#08080e";
-      ctx.fillRect(0, ry + 2, VOL_W, SUM_ROW_H - 2);
-      ctx.font = "bold 8px sans-serif";
-      ctx.fillStyle = col;
-      ctx.textAlign = "right";
-      ctx.textBaseline = "middle";
-      ctx.fillText(lbl, VOL_W - 4, ry + SUM_ROW_H / 2);
-    });
-
+    // (Per-bar delta/vol summary now lives in the HTML stats grid below.)
+    const timeY = vpH;
     ctx.save();
     ctx.beginPath();
-    ctx.rect(VOL_W, sumY, vpW, FOOTER_H);
+    ctx.rect(VOL_W, timeY, vpW, TIME_H);
     ctx.clip();
-
-    for (let bi = firstCol; bi <= lastCol; bi++) {
-      const s = sums[bi];
-      const x0 = VOL_W + bi * cW - v.scrollX;
-      const rows = [
-        { v: s.delta, col: s.delta >= 0 ? "#4477ee" : "#ee5577", bg: s.delta >= 0 ? "rgba(44,77,238,0.08)" : "rgba(238,55,119,0.08)" },
-        { v: s.cumD,  col: s.cumD  >= 0 ? "#bb88ee" : "#ee88bb", bg: s.cumD  >= 0 ? "rgba(130,55,200,0.06)" : "rgba(238,55,130,0.06)" },
-        { v: s.vol,   col: "#888", bg: "transparent" },
-      ];
-      rows.forEach(({ v: val, col, bg }, si) => {
-        const ry = sumY + si * SUM_ROW_H;
-        if (bg !== "transparent") {
-          ctx.fillStyle = bg;
-          ctx.fillRect(x0, ry + 2, cW - 1, SUM_ROW_H - 2);
-        }
-        if (cW >= 15) {
-          ctx.font = "bold 9px sans-serif";
-          ctx.fillStyle = col;
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          const pfx = si === 0 && val > 0 ? "+" : "";
-          ctx.fillText(pfx + fmt(val), x0 + cW / 2, ry + SUM_ROW_H / 2);
-        }
-        ctx.strokeStyle = "#111120";
-        ctx.lineWidth = 0.5;
-        ctx.beginPath();
-        ctx.moveTo(x0, ry + SUM_ROW_H - 0.5);
-        ctx.lineTo(x0 + cW, ry + SUM_ROW_H - 0.5);
-        ctx.stroke();
-      });
-    }
-
-    // Time axis
-    const timeY = sumY + SUM_ROWS * SUM_ROW_H;
     ctx.fillStyle = "#08080e";
     ctx.fillRect(VOL_W, timeY, vpW, TIME_H);
     ctx.strokeStyle = "#151520";
@@ -897,6 +986,33 @@ export default function DataLayer() {
     if (!rafRef.current) rafRef.current = requestAnimationFrame(draw);
   }, [draw]);
 
+  // ── Replay auto-advance ──────────────────────────────────────────────
+  // When playing, step the bucket index forward at the chosen speed.
+  useEffect(() => {
+    if (!replay.active || !replay.playing) return;
+    const iv = setInterval(() => {
+      setReplay((r) => {
+        const total = Object.keys(ohlcRef.current).length;
+        const nextIdx = Math.min(total - 1, r.idx + 1);
+        if (nextIdx === r.idx) return { ...r, playing: false };
+        return { ...r, idx: nextIdx };
+      });
+    }, Math.max(50, 1000 / replay.speed));
+    return () => clearInterval(iv);
+  }, [replay.active, replay.playing, replay.speed]);
+
+  // ── Replay scroll ────────────────────────────────────────────────────
+  // When replay.idx changes, scroll the chart so that bucket is centered.
+  useEffect(() => {
+    if (!replay.active) return;
+    const v = view.current;
+    const vpW = (cssSize.current.w || 800) - VOL_W - PRICE_W;
+    v.scrollX = Math.max(0, replay.idx * v.cW - vpW / 2);
+    v.userScrolled = true;
+    v.lastInteraction = Date.now();
+    scheduleDraw();
+  }, [replay.idx, replay.active, scheduleDraw]);
+
   // ── Mouse interaction ──────────────────────────────────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -912,7 +1028,53 @@ export default function DataLayer() {
       return "grid";
     }
 
+    // Convert screen (mx, my) → { bucket, price } using the snapshot
+    // populated by draw().
+    function screenToData(mx, my) {
+      const dd = drawDataRef.current;
+      if (!dd || !dd.buckets.length || !dd.allPrices.length) return null;
+      const colIdx = Math.floor((mx - VOL_W + dd.scrollX) / dd.cW);
+      const rowIdx = Math.floor((my + dd.scrollY) / dd.cH);
+      const bucket = dd.buckets[Math.max(0, Math.min(dd.buckets.length - 1, colIdx))];
+      const price = dd.allPrices[Math.max(0, Math.min(dd.allPrices.length - 1, rowIdx))];
+      if (bucket == null || price == null) return null;
+      return { bucket, price };
+    }
+
     function onMouseDown(e) {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const mode = drawModeRef.current;
+
+      // Drawing mode: intercept clicks inside the grid area
+      if (mode !== "pointer" && mx >= VOL_W && mx < rect.width - PRICE_W && my < rect.height - FOOTER_H) {
+        const pt = screenToData(mx, my);
+        if (!pt) return;
+        if (mode === "hline") {
+          setDrawings((prev) => [...prev, { id: Date.now(), type: "hline", price: pt.price, color: "#f59e0b" }]);
+          logMsgRef.current?.("info", `Horizontal line @ ${pt.price.toFixed(2)}`);
+        } else if (mode === "trendline") {
+          if (!drawingInProgress.current) {
+            drawingInProgress.current = { type: "trendline", from: pt };
+            scheduleDraw();
+          } else {
+            const from = drawingInProgress.current.from;
+            setDrawings((prev) => [...prev, { id: Date.now(), type: "trendline", from, to: pt, color: "#f59e0b" }]);
+            logMsgRef.current?.("info", `Trend line drawn (${from.bucket.slice(11)} → ${pt.bucket.slice(11)})`);
+            drawingInProgress.current = null;
+          }
+        } else if (mode === "text") {
+          const text = window.prompt("Text label:", "");
+          if (text && text.trim()) {
+            setDrawings((prev) => [...prev, { id: Date.now(), type: "text", bucket: pt.bucket, price: pt.price, text: text.trim(), color: "#f59e0b" }]);
+            logMsgRef.current?.("info", `Text label "${text.trim()}" placed`);
+          }
+        }
+        return;
+      }
+
+      // Default: pan/zoom drag
       v.dragging = true;
       v.dragZone = getDragZone(e);
       v.lastX = e.clientX;
@@ -952,7 +1114,12 @@ export default function DataLayer() {
         v.lastInteraction = Date.now();
       } else {
         const zone = getDragZone(e);
-        canvas.style.cursor = zone === "price" ? "ns-resize" : zone === "time" ? "ew-resize" : "crosshair";
+        const mode = drawModeRef.current;
+        canvas.style.cursor = mode !== "pointer"
+          ? "crosshair"
+          : zone === "price" ? "ns-resize"
+          : zone === "time" ? "ew-resize"
+          : "crosshair";
       }
       scheduleDraw();
     }
@@ -1094,6 +1261,10 @@ export default function DataLayer() {
     })();
 
     function connect() {
+      if (pausedRef.current) {
+        setStatus("disconnected");
+        return;
+      }
       // Combined stream: trades + depth (top 20 levels, 100ms diff cadence)
       const streams = [`${sym}@trade`, `${sym}@depth20@100ms`].join("/");
       ws = new WebSocket(`${BINANCE_WS_BASE}${streams}`);
@@ -1101,11 +1272,20 @@ export default function DataLayer() {
       ws.onopen = () => {
         setStatus("connected");
         setDataMode("live");
+        logMsgRef.current?.("info", `WS connected: ${sym}@trade + ${sym}@depth20`);
       };
-      ws.onerror = () => setStatus("error");
+      ws.onerror = () => {
+        setStatus("error");
+        logMsgRef.current?.("error", `WS error on ${sym}`);
+      };
       ws.onclose = () => {
         setStatus("disconnected");
-        if (!abort) timer = setTimeout(connect, 5000);
+        if (!abort && !pausedRef.current) {
+          logMsgRef.current?.("warn", `WS closed, reconnecting in 5s…`);
+          timer = setTimeout(connect, 5000);
+        } else if (pausedRef.current) {
+          logMsgRef.current?.("info", `WS closed (paused)`);
+        }
       };
       ws.onmessage = (e) => {
         try {
@@ -1173,7 +1353,8 @@ export default function DataLayer() {
       clearTimeout(timer);
       if (ws) ws.close();
     };
-  }, [ticker, scheduleDraw]);
+    // paused added so flipping pause tears down + recreates the socket
+  }, [ticker, scheduleDraw, paused]);
 
   // ── Timeframe change — re-bucket without WS reconnect ──
   useEffect(() => {
@@ -1336,33 +1517,120 @@ export default function DataLayer() {
   const barUp = hoverBar ? hoverBar.c >= hoverBar.o : false;
   const barColor = barUp ? "#22c55e" : "#ef4444";
 
-  // Menu definitions — Datrena pro-terminal top menu (standard generic categories
-  // common to professional desktop trading software).
+  // ── Functional handlers used by menus + toolbar ──────────────────────
+  const focusTickerInput = () => document.querySelector("[data-ticker-input]")?.focus();
+  const resetZoom = () => {
+    const v = view.current;
+    v.cW = DEFAULT_CW; v.cH = DEFAULT_CH; v.userScrolled = false; v.lastInteraction = 0;
+    scheduleDraw();
+  };
+  const pageLeft = () => {
+    const v = view.current;
+    const w = cssSize.current.w - VOL_W - PRICE_W;
+    v.scrollX = Math.max(-w / 2, v.scrollX - w * 0.8);
+    v.userScrolled = true;
+    v.lastInteraction = Date.now();
+    scheduleDraw();
+  };
+  const pageRight = () => {
+    const v = view.current;
+    const w = cssSize.current.w - VOL_W - PRICE_W;
+    v.scrollX += w * 0.8;
+    v.userScrolled = true;
+    v.lastInteraction = Date.now();
+    scheduleDraw();
+  };
+  const goFirst = () => {
+    const v = view.current;
+    v.scrollX = 0;
+    v.userScrolled = true;
+    v.lastInteraction = Date.now();
+    scheduleDraw();
+  };
+  const clearDrawings = () => {
+    if (drawings.length === 0) { logMsgRef.current?.("info", "No drawings to clear"); return; }
+    if (window.confirm(`Clear ${drawings.length} drawing(s)?`)) {
+      setDrawings([]);
+      drawingInProgress.current = null;
+      logMsgRef.current?.("info", "All drawings cleared");
+      scheduleDraw();
+    }
+  };
+  const saveWorkspace = (name) => {
+    const ws = {
+      ticker, timeframe, workspaceTabs, overlays, drawings,
+      view: { cW: view.current.cW, cH: view.current.cH },
+      savedAt: new Date().toISOString(),
+    };
+    const next = { ...savedWorkspaces, [name]: ws };
+    setSavedWorkspaces(next);
+    try { localStorage.setItem("datrena_workspaces", JSON.stringify(next)); } catch {}
+    logMsgRef.current?.("info", `Workspace "${name}" saved`);
+  };
+  const loadWorkspace = (name) => {
+    const ws = savedWorkspaces[name];
+    if (!ws) return;
+    setTicker(ws.ticker);
+    setTickerQuery(ws.ticker);
+    setTimeframe(ws.timeframe);
+    setWorkspaceTabs(ws.workspaceTabs || [ws.ticker]);
+    setOverlays(ws.overlays || overlays);
+    setDrawings(ws.drawings || []);
+    if (ws.view) { view.current.cW = ws.view.cW; view.current.cH = ws.view.cH; }
+    logMsgRef.current?.("info", `Workspace "${name}" loaded`);
+    setShowWorkspaceOpen(false);
+  };
+  const deleteWorkspace = (name) => {
+    if (!window.confirm(`Delete workspace "${name}"?`)) return;
+    const next = { ...savedWorkspaces };
+    delete next[name];
+    setSavedWorkspaces(next);
+    try { localStorage.setItem("datrena_workspaces", JSON.stringify(next)); } catch {}
+    logMsgRef.current?.("info", `Workspace "${name}" deleted`);
+  };
+  const togglePause = () => {
+    setPaused((p) => {
+      logMsgRef.current?.(p ? "info" : "warn", p ? "Connection resumed" : "Connection paused");
+      return !p;
+    });
+  };
+  const toggleDemo = () => {
+    setForceDemo((d) => {
+      logMsgRef.current?.("info", d ? "Live mode" : "DEMO mode");
+      return !d;
+    });
+  };
+
+  // Menu definitions — Datrena pro-terminal top menu.
   const MENUS = {
     File: [
-      { label: "New Chart", onClick: () => loadData(ticker, timeframe) },
+      { label: "New Chart Tab", onClick: () => {
+        if (!workspaceTabs.includes(ticker)) setWorkspaceTabs([...workspaceTabs, ticker]);
+      }},
       { label: "Refresh Data", onClick: () => loadData(ticker, timeframe) },
       { divider: true },
-      { label: "Save Workspace", onClick: () => alert("Saving workspaces in a future build") },
-      { label: "Open Workspace…", onClick: () => alert("Workspace files in a future build") },
+      { label: "Save Workspace…", onClick: () => setShowWorkspaceSave(true) },
+      { label: "Open Workspace…", onClick: () => setShowWorkspaceOpen(true) },
       { divider: true },
       { label: "Exit Datrena", onClick: () => { localStorage.removeItem("datrena_admin"); window.location.href = "/"; } },
     ],
     Edit: [
-      { label: "Find Symbol…", onClick: () => { const i = document.querySelector("[data-ticker-input]"); i?.focus(); } },
-      { label: "Clear Drawings", onClick: () => alert("Drawing tools in a future build") },
+      { label: "Find Symbol…", onClick: focusTickerInput },
+      { label: "Clear All Drawings", onClick: clearDrawings },
     ],
     View: [
-      { label: "Reset Zoom", onClick: () => {
-        const v = view.current;
-        v.cW = DEFAULT_CW; v.cH = DEFAULT_CH; v.userScrolled = false; v.lastInteraction = 0;
-        scheduleDraw();
-      }},
+      { label: "Reset Zoom", onClick: resetZoom },
       { label: "Snap to Latest", onClick: snapToLatest },
+      { label: "First Bar", onClick: goFirst },
+      { divider: true },
+      { label: "Values Window", onClick: () => setShowValuesWin(true) },
+      { label: "Message Log", onClick: () => setShowMsgLog(true) },
     ],
     Chart: [
-      { label: "Footprint Settings", onClick: () => setShowOverlayMenu(true) },
-      { label: "Toggle DEMO/Live", onClick: () => alert("Live feed switching coming soon") },
+      { label: "Studies / Overlays…", onClick: () => setShowOverlayMenu(true) },
+      { label: forceDemo ? "Switch to Live Mode" : "Switch to DEMO Mode", onClick: toggleDemo },
+      { divider: true },
+      { label: paused ? "Resume Connection" : "Pause Connection", onClick: togglePause },
     ],
     Analysis: OVERLAY_DEFS.map((d) => ({
       label: d.label,
@@ -1370,22 +1638,26 @@ export default function DataLayer() {
       onClick: () => setOverlays((prev) => ({ ...prev, [d.key]: !prev[d.key] })),
     })),
     Tools: [
-      { label: "Pointer", icon: MousePointer, onClick: () => alert("Drawing tools in a future build") },
-      { label: "Trend Line", icon: PenTool, onClick: () => alert("Drawing tools in a future build") },
-      { label: "Horizontal Line", icon: Minus, onClick: () => alert("Drawing tools in a future build") },
-      { label: "Text Label", icon: Type, onClick: () => alert("Drawing tools in a future build") },
+      { label: "Pointer", icon: MousePointer, checked: drawMode === "pointer", onClick: () => setDrawMode("pointer") },
+      { label: "Trend Line", icon: PenTool, checked: drawMode === "trendline", onClick: () => setDrawMode("trendline") },
+      { label: "Horizontal Line", icon: Minus, checked: drawMode === "hline", onClick: () => setDrawMode("hline") },
+      { label: "Text Label", icon: Type, checked: drawMode === "text", onClick: () => setDrawMode("text") },
+      { divider: true },
+      { label: "Clear All Drawings", onClick: clearDrawings },
     ],
-    Trade: [
-      { label: "Trade Panel (soon)", disabled: true },
-      { label: "Position Window (soon)", disabled: true },
+    Replay: [
+      { label: showReplay ? "Hide Replay Panel" : "Open Replay Panel", onClick: () => setShowReplay(!showReplay) },
     ],
     Window: [
       { label: "Reload Page", onClick: () => window.location.reload() },
       { label: "Full Screen", onClick: () => document.documentElement.requestFullscreen?.() },
+      { divider: true },
+      { label: "Values Window", onClick: () => setShowValuesWin(true) },
+      { label: "Message Log", onClick: () => setShowMsgLog(true) },
     ],
     Help: [
-      { label: "About Datrena", onClick: () => alert("Datrena · pro order-flow charting · v0.1.0") },
-      { label: "Keyboard Shortcuts", onClick: () => alert("Shift+Z to enter · click 'Exit Admin' to leave") },
+      { label: "About Datrena…", onClick: () => setShowAbout(true) },
+      { label: "Keyboard Shortcuts", onClick: () => alert("Shift+Z to enter · ESC to exit drawing/modals · double-click chart to reset zoom") },
     ],
   };
 
@@ -1496,41 +1768,42 @@ export default function DataLayer() {
         overflowX: "auto",
       }}>
         {/* Symbol group */}
-        <ToolBtn label="Find" icon={Search} onClick={() => { document.querySelector("[data-ticker-input]")?.focus(); }} />
-        <ToolBtn label="Open" icon={FolderOpen} onClick={() => alert("Workspace files in a future build")} />
-        <ToolBtn label="Save" icon={Save} onClick={() => alert("Saving workspaces in a future build")} />
+        <ToolBtn label="Find" icon={Search} onClick={focusTickerInput} />
+        <ToolBtn label="Open" icon={FolderOpen} onClick={() => setShowWorkspaceOpen(true)} />
+        <ToolBtn label="Save" icon={Save} onClick={() => setShowWorkspaceSave(true)} />
         <ToolBtn label="Close" icon={XIcon} onClick={() => { localStorage.removeItem("datrena_admin"); window.location.href = "/"; }} />
         <ToolDivider />
 
         {/* Connection */}
-        <ToolBtn label="Conn" icon={Wifi} active={status === "connected"} />
-        <ToolBtn label="Disc" icon={WifiOff} active={status !== "connected"} />
+        <ToolBtn label="Conn" icon={Wifi} active={!paused && status === "connected"} onClick={() => { if (paused) togglePause(); }} />
+        <ToolBtn label="Disc" icon={WifiOff} active={paused} onClick={() => { if (!paused) togglePause(); }} />
         <ToolDivider />
 
         {/* Navigation */}
-        <ToolBtn label="First" icon={ChevronsLeft} onClick={() => alert("Bar navigation in a future build")} />
-        <ToolBtn label="Prev" icon={CLeft} onClick={() => alert("Bar navigation in a future build")} />
-        <ToolBtn label="Next" icon={CRight} onClick={() => alert("Bar navigation in a future build")} />
+        <ToolBtn label="First" icon={ChevronsLeft} onClick={goFirst} />
+        <ToolBtn label="Prev" icon={CLeft} onClick={pageLeft} />
+        <ToolBtn label="Next" icon={CRight} onClick={pageRight} />
         <ToolBtn label="Last" icon={ChevronsRight} onClick={snapToLatest} />
         <ToolDivider />
 
         {/* Chart tools */}
         <ToolBtn label="Settings" icon={Settings} onClick={() => setShowOverlayMenu(true)} />
-        <ToolBtn label="Studies" icon={Layers} onClick={() => setOpenMenu("Analysis")} />
-        <ToolBtn label="Pointer" icon={MousePointer} onClick={() => alert("Drawing tools in a future build")} />
+        <ToolBtn label="Studies" icon={Layers} onClick={() => setOpenMenu(openMenu === "Analysis" ? null : "Analysis")} />
+        <ToolBtn label="Pointer" icon={MousePointer} active={drawMode === "pointer"} onClick={() => setDrawMode("pointer")} />
         <ToolDivider />
 
         {/* Drawing */}
-        <ToolBtn label="Line" icon={PenTool} onClick={() => alert("Drawing tools in a future build")} />
-        <ToolBtn label="Hline" icon={Minus} onClick={() => alert("Drawing tools in a future build")} />
-        <ToolBtn label="Text" icon={Type} onClick={() => alert("Drawing tools in a future build")} />
+        <ToolBtn label="Line" icon={PenTool} active={drawMode === "trendline"} onClick={() => setDrawMode("trendline")} />
+        <ToolBtn label="Hline" icon={Minus} active={drawMode === "hline"} onClick={() => setDrawMode("hline")} />
+        <ToolBtn label="Text" icon={Type} active={drawMode === "text"} onClick={() => setDrawMode("text")} />
+        <ToolBtn label="Clear" icon={XIcon} onClick={clearDrawings} />
         <ToolDivider />
 
         {/* Replay + values */}
-        <ToolBtn label="Replay" icon={Activity} onClick={() => alert("Replay engine in a future build")} />
-        <ToolBtn label="Values" icon={FileText} onClick={() => alert("Values window in a future build")} />
-        <ToolBtn label="Msgs" icon={MessageSquare} onClick={() => alert("Message log in a future build")} />
-        <ToolBtn label="Position" icon={Briefcase} onClick={() => alert("Trade panel in a future build")} />
+        <ToolBtn label="Replay" icon={Activity} active={showReplay} onClick={() => setShowReplay(!showReplay)} />
+        <ToolBtn label="Values" icon={FileText} active={showValuesWin} onClick={() => setShowValuesWin(!showValuesWin)} />
+        <ToolBtn label="Msgs" icon={MessageSquare} active={showMsgLog} onClick={() => setShowMsgLog(!showMsgLog)} />
+        <ToolBtn label="Position" icon={Briefcase} disabled />
         <ToolDivider />
 
         {/* Timeframes */}
@@ -1769,9 +2042,14 @@ export default function DataLayer() {
 
         {/* Right side: status */}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, fontFamily: "sans-serif" }}>
-          {dataMode === "demo" && (
+          {(forceDemo || dataMode === "demo") && (
             <span style={{ color: "#f59e0b", fontSize: 9, padding: "1px 6px", border: "1px solid #453000", borderRadius: 3, background: "#1a1500" }}>
               DEMO
+            </span>
+          )}
+          {paused && (
+            <span style={{ color: "#ef8888", fontSize: 9, padding: "1px 6px", border: "1px solid #5a2018", borderRadius: 3, background: "#1a0a0a" }}>
+              PAUSED
             </span>
           )}
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -1974,8 +2252,8 @@ export default function DataLayer() {
           {status === "connected"
             ? <Wifi size={9} style={{ color: "#22c55e" }} />
             : <WifiOff size={9} style={{ color: "#666" }} />}
-          <span style={{ color: status === "connected" ? "#22c55e" : "#888" }}>
-            {status === "connected" ? "Binance WS · live" : "Disconnected"}
+          <span style={{ color: paused ? "#ef8888" : status === "connected" ? "#22c55e" : "#888" }}>
+            {paused ? "Paused" : status === "connected" ? "Binance WS · live" : "Disconnected"}
           </span>
         </span>
         <span>·</span>
@@ -1989,6 +2267,242 @@ export default function DataLayer() {
         </span>
         <span>·</span>
         <span style={{ color: "#888" }}>{now.toLocaleTimeString()}</span>
+      </div>
+
+      {/* ─────────────────── DRAW MODE INDICATOR ─────────────────── */}
+      {drawMode !== "pointer" && (
+        <div style={{
+          position: "fixed", top: 14, left: "50%", transform: "translateX(-50%)",
+          background: "#1a1400", border: "1px solid #453000", color: "#f59e0b",
+          padding: "6px 14px", borderRadius: 999, fontSize: 11, fontFamily: "sans-serif",
+          fontWeight: 600, zIndex: 200, boxShadow: "0 4px 12px rgba(0,0,0,0.6)",
+          display: "flex", alignItems: "center", gap: 8,
+        }}>
+          {drawMode === "trendline" && <PenTool size={12} />}
+          {drawMode === "hline" && <Minus size={12} />}
+          {drawMode === "text" && <Type size={12} />}
+          <span>
+            {drawMode === "trendline" && (drawingInProgress.current ? "Click second point" : "Click first point of trend line")}
+            {drawMode === "hline" && "Click chart to drop horizontal line"}
+            {drawMode === "text" && "Click chart to place text label"}
+          </span>
+          <button
+            onClick={() => { drawingInProgress.current = null; setDrawMode("pointer"); }}
+            style={{ background: "transparent", border: "none", color: "#f59e0b", cursor: "pointer", padding: 0, marginLeft: 4 }}
+            title="Exit (Esc)"
+          ><XIcon size={11} /></button>
+        </div>
+      )}
+
+      {/* ─────────────────── MODALS ─────────────────── */}
+      {showValuesWin && (
+        <Modal title="Values Window" onClose={() => setShowValuesWin(false)} width={380}>
+          <table style={{ width: "100%", fontFamily: "monospace", fontSize: 11, color: "#c0c0d8" }}>
+            <tbody>
+              {[
+                ["Symbol", label],
+                ["Timeframe", timeframe],
+                ["Last Close", aggregates.latest?.close?.toFixed(4) ?? "—"],
+                ["Open", aggregates.latest?.open?.toFixed(4) ?? "—"],
+                ["High (session)", aggregates.dailyHigh?.toFixed(4) ?? "—"],
+                ["Low (session)", aggregates.dailyLow?.toFixed(4) ?? "—"],
+                ["Change", `${aggregates.change >= 0 ? "+" : ""}${aggregates.change.toFixed(4)}`],
+                ["Delta (current bar)", `${aggregates.deltaChange >= 0 ? "+" : ""}${aggregates.deltaChange.toLocaleString()}`],
+                ["Avg Level Vol", aggregates.avgLevelVol.toLocaleString()],
+                ["Avg Bar Vol", aggregates.avgBarVol.toLocaleString()],
+                ["Total Bars", aggregates.barCount.toLocaleString()],
+                ["Total Trades", aggregates.totalTrades.toLocaleString()],
+                ["Tick Size", TICK.toString()],
+                ["Connection", paused ? "Paused" : status],
+                ["Drawings", drawings.length.toString()],
+              ].map(([k, v]) => (
+                <tr key={k} style={{ borderBottom: "1px solid #1a1a28" }}>
+                  <td style={{ color: "#666", padding: "5px 8px" }}>{k}</td>
+                  <td style={{ color: "#c0c0d8", padding: "5px 8px", textAlign: "right", fontWeight: 600 }}>{v}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Modal>
+      )}
+
+      {showMsgLog && (
+        <Modal title={`Message Log (${msgLog.length})`} onClose={() => setShowMsgLog(false)} width={520}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+            <button onClick={() => setMsgLog([])}
+              style={{ background: "#0c0c14", border: "1px solid #1a1a2c", color: "#888", padding: "4px 10px", borderRadius: 3, fontSize: 10, cursor: "pointer" }}>
+              Clear log
+            </button>
+          </div>
+          <div style={{ maxHeight: 360, overflowY: "auto", fontFamily: "monospace", fontSize: 10, background: "#08080c", border: "1px solid #1a1a28", borderRadius: 4 }}>
+            {msgLog.length === 0 ? (
+              <div style={{ padding: 16, textAlign: "center", color: "#444" }}>No messages yet.</div>
+            ) : msgLog.map((m, i) => (
+              <div key={i} style={{
+                padding: "4px 10px", borderBottom: "1px solid #14141c",
+                display: "flex", gap: 10, alignItems: "baseline",
+              }}>
+                <span style={{ color: "#444", whiteSpace: "nowrap" }}>{m.time.toLocaleTimeString()}</span>
+                <span style={{
+                  color: m.level === "error" ? "#ef8888" : m.level === "warn" ? "#f59e0b" : "#5ee07a",
+                  fontWeight: 700, minWidth: 40, fontSize: 9, textTransform: "uppercase",
+                }}>{m.level}</span>
+                <span style={{ color: "#c0c0d8", flex: 1 }}>{m.text}</span>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
+
+      {showReplay && (
+        <Modal title="Replay Panel" onClose={() => setShowReplay(false)} width={420}>
+          <p style={{ color: "#888", fontSize: 11, marginTop: 0, lineHeight: 1.5 }}>
+            Step through historical candles. Use the slider to scrub or the play button to auto-advance.
+            Pause the live feed (Disc) before replaying.
+          </p>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <button
+              onClick={() => setReplay((r) => ({ ...r, playing: !r.playing, active: true }))}
+              style={{ background: replay.playing ? "#1a3a0a" : "#0c0c14", border: "1px solid #1a1a2c", color: replay.playing ? "#5ee07a" : "#c0c0d8", padding: "6px 14px", borderRadius: 3, fontSize: 11, cursor: "pointer", fontWeight: 600 }}
+            >
+              {replay.playing ? "⏸ Pause" : "▶ Play"}
+            </button>
+            <button
+              onClick={() => setReplay({ active: false, playing: false, idx: 0, speed: 1 })}
+              style={{ background: "#0c0c14", border: "1px solid #1a1a2c", color: "#888", padding: "6px 14px", borderRadius: 3, fontSize: 11, cursor: "pointer" }}
+            >
+              Reset
+            </button>
+            <span style={{ color: "#666", fontSize: 10, marginLeft: "auto" }}>
+              Speed: <strong style={{ color: "#c0c0d8" }}>{replay.speed}×</strong>
+            </span>
+          </div>
+          <input
+            type="range" min="0" max={Math.max(0, Object.keys(ohlcRef.current).length - 1)} value={replay.idx}
+            onChange={(e) => setReplay((r) => ({ ...r, idx: parseInt(e.target.value), active: true }))}
+            style={{ width: "100%" }}
+          />
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#666", marginTop: 6 }}>
+            <span>Bar {replay.idx + 1}</span>
+            <span>of {Object.keys(ohlcRef.current).length}</span>
+          </div>
+          <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
+            {[0.5, 1, 2, 4, 8].map((s) => (
+              <button key={s} onClick={() => setReplay((r) => ({ ...r, speed: s }))}
+                style={{
+                  background: replay.speed === s ? "#152040" : "#0c0c14", border: "1px solid #1a1a2c",
+                  color: replay.speed === s ? "#60a5fa" : "#666", padding: "3px 10px", borderRadius: 3, fontSize: 10, cursor: "pointer",
+                }}>
+                {s}×
+              </button>
+            ))}
+          </div>
+        </Modal>
+      )}
+
+      {showWorkspaceSave && (
+        <Modal title="Save Workspace" onClose={() => setShowWorkspaceSave(false)} width={340}>
+          <p style={{ color: "#888", fontSize: 11, marginTop: 0 }}>
+            Save the current chart layout, overlays, drawings, and watchlist tabs under a name.
+          </p>
+          <input
+            autoFocus value={wsNameInput} onChange={(e) => setWsNameInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && wsNameInput.trim()) { saveWorkspace(wsNameInput.trim()); setWsNameInput(""); setShowWorkspaceSave(false); } }}
+            placeholder="Workspace name…"
+            style={{ width: "100%", background: "#0c0c14", border: "1px solid #1a1a2c", color: "#c0c0d8", padding: "8px 10px", fontSize: 12, fontFamily: "monospace", borderRadius: 3, outline: "none" }}
+          />
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 12 }}>
+            <button onClick={() => setShowWorkspaceSave(false)} style={{ background: "transparent", border: "1px solid #1a1a2c", color: "#888", padding: "6px 14px", borderRadius: 3, fontSize: 11, cursor: "pointer" }}>Cancel</button>
+            <button
+              onClick={() => { if (wsNameInput.trim()) { saveWorkspace(wsNameInput.trim()); setWsNameInput(""); setShowWorkspaceSave(false); } }}
+              disabled={!wsNameInput.trim()}
+              style={{ background: "#fafafa", border: "none", color: "#0a0a10", padding: "6px 14px", borderRadius: 3, fontSize: 11, fontWeight: 600, cursor: "pointer", opacity: wsNameInput.trim() ? 1 : 0.4 }}
+            >Save</button>
+          </div>
+        </Modal>
+      )}
+
+      {showWorkspaceOpen && (
+        <Modal title="Open Workspace" onClose={() => setShowWorkspaceOpen(false)} width={420}>
+          {Object.keys(savedWorkspaces).length === 0 ? (
+            <p style={{ color: "#666", fontSize: 12, textAlign: "center", padding: 24 }}>
+              No saved workspaces yet. Save one from File → Save Workspace.
+            </p>
+          ) : (
+            <div style={{ maxHeight: 320, overflowY: "auto" }}>
+              {Object.entries(savedWorkspaces).map(([name, ws]) => (
+                <div key={name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderBottom: "1px solid #14141c" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, color: "#c0c0d8", fontWeight: 600 }}>{name}</div>
+                    <div style={{ fontSize: 9, color: "#555", fontFamily: "monospace" }}>
+                      {ws.ticker} · {ws.timeframe} · {(ws.drawings || []).length} drawings · saved {new Date(ws.savedAt).toLocaleString()}
+                    </div>
+                  </div>
+                  <button onClick={() => loadWorkspace(name)}
+                    style={{ background: "#0c1020", border: "1px solid #152040", color: "#60a5fa", padding: "4px 12px", borderRadius: 3, fontSize: 10, cursor: "pointer", fontWeight: 600 }}>
+                    Load
+                  </button>
+                  <button onClick={() => deleteWorkspace(name)}
+                    style={{ background: "transparent", border: "1px solid #2a1a1a", color: "#ef8888", padding: "4px 8px", borderRadius: 3, fontSize: 10, cursor: "pointer" }}>
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
+
+      {showAbout && (
+        <Modal title="About Datrena" onClose={() => setShowAbout(false)} width={400}>
+          <div style={{ textAlign: "center", padding: "6px 0 14px" }}>
+            <div style={{ fontSize: 22, fontWeight: 300, color: "#fafafa", marginBottom: 4 }}>Datrena</div>
+            <div style={{ fontSize: 10, color: "#666", letterSpacing: 2, textTransform: "uppercase" }}>Quant Trading Terminal</div>
+            <div style={{ fontSize: 10, color: "#444", marginTop: 8, fontFamily: "monospace" }}>v0.1.0 · web</div>
+          </div>
+          <div style={{ fontSize: 11, color: "#888", lineHeight: 1.55 }}>
+            <p>Live order flow footprint charting on Binance public market data. Bring-your-own-data ready for Rithmic, CQG, dxFeed, and IQFeed at full launch.</p>
+            <p>Press <strong style={{ color: "#c0c0d8" }}>Shift+Z</strong> on the public site to enter the chart. <strong style={{ color: "#c0c0d8" }}>ESC</strong> to exit drawing/modals.</p>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ── Modal primitive ──────────────────────────────────────────────────
+function Modal({ title, onClose, children, width = 420 }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 250,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        backdropFilter: "blur(2px)", padding: 20,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#0c0c14", border: "1px solid #2a2a3a", borderRadius: 6,
+          width, maxWidth: "100%", maxHeight: "90vh", display: "flex", flexDirection: "column",
+          boxShadow: "0 12px 40px rgba(0,0,0,0.7)",
+          fontFamily: "sans-serif",
+        }}
+      >
+        <div style={{
+          padding: "8px 14px", borderBottom: "1px solid #1a1a28",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          background: "#10101a",
+        }}>
+          <span style={{ color: "#c0c0d8", fontSize: 12, fontWeight: 600 }}>{title}</span>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: "#666", cursor: "pointer", padding: 0, display: "flex", alignItems: "center" }} title="Close (Esc)">
+            <XIcon size={14} />
+          </button>
+        </div>
+        <div style={{ padding: 16, overflowY: "auto", flex: 1 }}>
+          {children}
+        </div>
       </div>
     </div>
   );
