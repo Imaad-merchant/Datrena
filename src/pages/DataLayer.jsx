@@ -461,7 +461,6 @@ export default function DataLayer() {
 
     const v   = view.current;
     const cW  = v.cW;
-    const cH  = v.cH;
     const can = candlesRef.current;
     const olc = ohlcRef.current;
     const ov  = overlaysRef.current;
@@ -487,6 +486,27 @@ export default function DataLayer() {
     const nRows = allPrices.length;
     const vpW = W - VOL_W - PRICE_W;
     const vpH = H - FOOTER_H;
+
+    // Auto-fit vertical cell height to the recent price range so 21 days
+    // of history don't crush every candle into a single pixel. Only fires
+    // when the user hasn't manually zoomed (userScrolled = false).
+    if (!v.userScrolled) {
+      const visStart = Math.max(0, nCols - 50);
+      let recentHi = -Infinity, recentLo = Infinity;
+      for (let bi = visStart; bi < nCols; bi++) {
+        const bar = olc[buckets[bi]];
+        if (!bar) continue;
+        if (bar.high > recentHi) recentHi = bar.high;
+        if (bar.low < recentLo) recentLo = bar.low;
+      }
+      if (isFinite(recentHi) && isFinite(recentLo) && recentHi > recentLo) {
+        const rangeTicks = Math.max(1, Math.ceil((recentHi - recentLo) / TICK));
+        // Recent range occupies ~70% of viewport height
+        const targetCH = (vpH * 0.7) / rangeTicks;
+        v.cH = Math.max(MIN_CH, Math.min(MAX_CH, targetCH));
+      }
+    }
+    const cH = v.cH;
     const totalW = nCols * cW;
     const totalH = nRows * cH;
 
@@ -497,7 +517,7 @@ export default function DataLayer() {
     // Snapshot for mouse-handler coordinate conversion + drawing rendering
     drawDataRef.current = { buckets, allPrices, topP, cW, cH, scrollX: v.scrollX, scrollY: v.scrollY };
 
-    // Auto-scroll
+    // Auto-scroll to latest close (cH was already auto-fit above)
     if (!v.userScrolled) {
       v.scrollX = Math.max(0, totalW - vpW);
       const lastBar = olc[buckets[buckets.length - 1]];
