@@ -1,0 +1,63 @@
+{
+  "name": "Trade",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Trading symbol"
+    },
+    "entry_price": {
+      "type": "number",
+      "description": "Entry price"
+    },
+    "exit_price": {
+      "type": "number",
+      "description": "Exit price"
+    },
+    "quantity": {
+      "type": "number",
+      "description": "Position size"
+    },
+    "direction": {
+      "type": "string",
+      "enum": [
+        "long",
+        "short"
+      ],
+      "description": "Trade direction"
+    },
+    "entry_time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Entry timestamp"
+    },
+    "exit_time": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Exit timestamp"
+    },
+    "pnl": {
+      "type": "number",
+      "description": "Profit/Loss"
+    },
+    "commission": {
+      "type": "number",
+      "description": "Trading fees"
+    },
+    "prop_firm": {
+      "type": "string",
+      "description": "Source prop firm"
+    },
+    "account_id": {
+      "type": "string",
+      "description": "Account identifier"
+    }
+  },
+  "required": [
+    "symbol",
+    "entry_price",
+    "exit_price",
+    "direction",
+    "pnl"
+  ]
+}

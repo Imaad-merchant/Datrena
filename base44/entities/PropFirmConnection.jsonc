@@ -1,0 +1,48 @@
+{
+  "name": "PropFirmConnection",
+  "type": "object",
+  "properties": {
+    "firm_name": {
+      "type": "string",
+      "enum": [
+        "TopStep",
+        "Tradovate",
+        "Apex",
+        "Alpha Futures",
+        "FTMO",
+        "Earn2Trade",
+        "The5ers",
+        "Bulenox",
+        "My Forex Funds"
+      ],
+      "description": "Prop firm provider"
+    },
+    "account_id": {
+      "type": "string",
+      "description": "Account identifier from the firm"
+    },
+    "api_key": {
+      "type": "string",
+      "description": "API key for connection"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "connected",
+        "disconnected",
+        "pending"
+      ],
+      "default": "pending",
+      "description": "Connection status"
+    },
+    "last_sync": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last data sync timestamp"
+    }
+  },
+  "required": [
+    "firm_name",
+    "account_id"
+  ]
+}
